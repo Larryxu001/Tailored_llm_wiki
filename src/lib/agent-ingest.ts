@@ -17,6 +17,7 @@ import { useActivityStore } from "@/stores/activity-store"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
 import {
   createDirectory,
+  deleteFile,
   getFileModifiedTime,
   getFileSize,
   listDirectory,
@@ -158,6 +159,7 @@ export async function runAgentTurn(
   signal: AbortSignal | undefined,
   overrides: Parameters<typeof streamChat>[4],
   firstOutputTimeoutMs = AGENT_FIRST_OUTPUT_TIMEOUT_MS,
+  onActivity?: () => void,
 ): Promise<string> {
   const controller = new AbortController()
   const forwardAbort = () => controller.abort()
@@ -180,6 +182,7 @@ export async function runAgentTurn(
       {
         onToken: (token) => {
           sawOutput = true
+          onActivity?.()
           text += token
         },
         onDone: () => {},
@@ -190,14 +193,21 @@ export async function runAgentTurn(
         ...overrides,
         // Any CLI event (thread start, tool call, reasoning) proves the
         // agent is alive; only total silence trips the watchdog.
-        agentOnActivity: () => { sawOutput = true },
+        agentOnActivity: () => {
+          sawOutput = true
+          onActivity?.()
+        },
       },
     )
   } finally {
     clearTimeout(watchdog)
     signal?.removeEventListener("abort", forwardAbort)
   }
-  if (stalled) throw new Error(AGENT_STARTUP_STALL_MESSAGE)
+  if (stalled) {
+    // A pending privacy prompt does not clear by itself; retrying only
+    // burns another five minutes per attempt.
+    throw Object.assign(new Error(AGENT_STARTUP_STALL_MESSAGE), { nonRetryable: true })
+  }
   if (signal?.aborted) throw new Error("cancelled")
   if (failure) throw failure
   return text
@@ -231,13 +241,40 @@ export function dominantScript(text: string): "latin" | "cjk" | "other" {
 
 const CJK_TARGETS = new Set(["Chinese", "Traditional Chinese", "Japanese", "Korean"])
 
+const ENGLISH_WORDS = ["the", "and", "of", "to", "in", "is", "for", "that", "with", "on"]
+const LATIN_TARGET_WORDS: Record<string, string[]> = {
+  French: ["le", "la", "les", "et", "des", "est", "une", "pour", "dans", "que"],
+  German: ["der", "die", "und", "das", "ist", "nicht", "mit", "den", "von", "zu"],
+  Spanish: ["el", "la", "los", "y", "que", "en", "del", "las", "por", "una"],
+  Italian: ["il", "la", "che", "di", "e", "per", "una", "sono", "del", "non"],
+  Portuguese: ["o", "a", "que", "de", "e", "do", "da", "em", "para", "uma"],
+}
+
+function looksLike(text: string, functionWords: string[]): boolean {
+  const words = text.slice(0, 40_000).toLowerCase().match(/[a-zà-ÿ]+/g) ?? []
+  if (words.length < 50) return false
+  const set = new Set(functionWords)
+  const hits = words.filter((w) => set.has(w)).length
+  return hits / words.length >= 0.08
+}
+
+export function looksEnglish(text: string): boolean {
+  return looksLike(text, ENGLISH_WORDS)
+}
+
 export function needsTranslation(sourceContent: string, targetLanguage: string): boolean {
   const configured = useWikiStore.getState().outputLanguage
   if (!configured || configured === "auto") return false
   const script = dominantScript(sourceContent)
-  // Latin-script sources are treated as English (the script-based detector
-  // cannot tell Latin-script languages apart).
-  if (script === "latin") return targetLanguage !== "English"
+  if (script === "latin") {
+    // The script detector cannot tell Latin-script languages apart, so use
+    // English function words: English → translate unless the target is
+    // English; any other Latin-script language → translate into English, and
+    // into a different non-English target.
+    const english = looksEnglish(sourceContent)
+    if (targetLanguage === "English") return !english
+    return english || !LATIN_TARGET_WORDS[targetLanguage] || !looksLike(sourceContent, LATIN_TARGET_WORDS[targetLanguage])
+  }
   if (script === "cjk") {
     if (!CJK_TARGETS.has(targetLanguage)) return true
     // CJK source into a CJK target: translate only across languages
@@ -361,10 +398,12 @@ export async function runAgentIngest(
 
   const before = await snapshotWiki(pp)
   const startedAt = Date.now()
+  let lastActivityAt = startedAt
   const ticker = setInterval(() => {
     const secs = Math.round((Date.now() - startedAt) / 1000)
+    const quiet = Date.now() - lastActivityAt >= 90_000
     activity.updateItem(ctx.activityId, {
-      detail: `Agent ingest running (${ctx.llmConfig.provider}, ${secs}s)${translate ? " — incl. translation" : ""}...${secs >= 90 ? AGENT_STALL_HINT : ""}`,
+      detail: `Agent ingest running (${ctx.llmConfig.provider}, ${secs}s)${translate ? " — incl. translation" : ""}...${quiet ? AGENT_STALL_HINT : ""}`,
     })
   }, 2000)
 
@@ -375,6 +414,8 @@ export async function runAgentIngest(
       prompt,
       ctx.signal,
       agentRequestOverrides(agentConfig),
+      AGENT_FIRST_OUTPUT_TIMEOUT_MS,
+      () => { lastActivityAt = Date.now() },
     )
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -447,6 +488,8 @@ export async function runAgentIngest(
   if (reviewItems.length > 0) useReviewStore.getState().addItems(reviewItems)
 
   await saveIngestCache(pp, ctx.sourceIdentity, ctx.sourceContent, writtenPaths)
+  // The extracted-text hand-off is only needed during the run.
+  try { await deleteFile(`${pp}/${inputRelPath}`) } catch { /* ignore */ }
   await markPagesForAgentLint(pp, writtenPaths)
   await deps.embedPages(writtenPaths)
 

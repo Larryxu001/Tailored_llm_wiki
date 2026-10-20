@@ -25,7 +25,7 @@ import { withProjectLock } from "@/lib/project-mutex"
 import { getLanguagePromptName } from "@/lib/language-metadata"
 import { getOutputLanguage } from "@/lib/output-language"
 import { agentLlmConfig, agentRequestOverrides, supportsAgentMode, useAgentConfigStore } from "@/lib/agent-config"
-import { AGENT_STALL_HINT, diffSnapshots, localDate, pruneDeletedPagesFromIndex, runAgentTurn, snapshotWiki } from "@/lib/agent-ingest"
+import { AGENT_FIRST_OUTPUT_TIMEOUT_MS, AGENT_STALL_HINT, diffSnapshots, localDate, pruneDeletedPagesFromIndex, runAgentTurn, snapshotWiki } from "@/lib/agent-ingest"
 import {
   completeAgentLint,
   ensureFullLintBaseline,
@@ -155,9 +155,11 @@ async function runAgentLintImpl(
 
     const before = await snapshotWiki(pp)
     const startedAt = Date.now()
+    let lastActivityAt = startedAt
     const ticker = setInterval(() => {
+      const quiet = Date.now() - lastActivityAt >= 90_000
       activity.updateItem(activityId, {
-        detail: `Agent lint running (${Math.round((Date.now() - startedAt) / 1000)}s)...${Date.now() - startedAt >= 90_000 ? AGENT_STALL_HINT : ""}`,
+        detail: `Agent lint running (${Math.round((Date.now() - startedAt) / 1000)}s)...${quiet ? AGENT_STALL_HINT : ""}`,
       })
     }, 2000)
     let finalText = ""
@@ -167,6 +169,8 @@ async function runAgentLintImpl(
         prompt,
         signal,
         agentRequestOverrides(agentConfig),
+        AGENT_FIRST_OUTPUT_TIMEOUT_MS,
+        () => { lastActivityAt = Date.now() },
       )
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

@@ -227,7 +227,7 @@ export function AgentSection() {
         {lintState && (
           <p className="text-xs text-muted-foreground">
             待体检页面 {lintState.pendingPages.length} 个；上次全库体检：
-            {lintState.lastFullLintAt ? new Date(lintState.lastFullLintAt).toLocaleString() : "从未"}
+            {lintState.lastFullLintRunAt ? new Date(lintState.lastFullLintRunAt).toLocaleString() : "从未"}
           </p>
         )}
         <div className="flex gap-2">

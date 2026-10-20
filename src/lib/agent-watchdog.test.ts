@@ -14,7 +14,9 @@ describe("agent startup watchdog", () => {
       new Promise<void>((resolve) => {
         signal.addEventListener("abort", () => { callbacks.onDone(); resolve() })
       }))
-    await expect(runAgentTurn(config, "p", undefined, {}, 30)).rejects.toThrow(AGENT_STARTUP_STALL_MESSAGE)
+    const err = await runAgentTurn(config, "p", undefined, {}, 30).catch((e) => e)
+    expect(err.message).toBe(AGENT_STARTUP_STALL_MESSAGE)
+    expect(err.nonRetryable).toBe(true)
   })
 
   it("keeps a run alive that only emits tool events, then returns its text", async () => {

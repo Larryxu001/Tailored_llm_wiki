@@ -12,11 +12,14 @@ import { withProjectLock } from "@/lib/project-mutex"
 export interface AgentLintState {
   version: 1
   pendingPages: string[]
+  /** Scheduling baseline for the periodic full lint (first run or last full run). */
   lastFullLintAt: number | null
+  /** When a full-wiki lint actually completed (null = never). */
+  lastFullLintRunAt: number | null
   lastLintAt: number | null
 }
 
-const EMPTY_STATE: AgentLintState = { version: 1, pendingPages: [], lastFullLintAt: null, lastLintAt: null }
+const EMPTY_STATE: AgentLintState = { version: 1, pendingPages: [], lastFullLintAt: null, lastFullLintRunAt: null, lastLintAt: null }
 
 function statePath(projectPath: string): string {
   return `${normalizePath(projectPath)}/.llm-wiki/agent-lint-state.json`
@@ -29,6 +32,7 @@ export async function loadAgentLintState(projectPath: string): Promise<AgentLint
       version: 1,
       pendingPages: Array.isArray(parsed.pendingPages) ? parsed.pendingPages.filter((p) => typeof p === "string") : [],
       lastFullLintAt: typeof parsed.lastFullLintAt === "number" ? parsed.lastFullLintAt : null,
+      lastFullLintRunAt: typeof parsed.lastFullLintRunAt === "number" ? parsed.lastFullLintRunAt : null,
       lastLintAt: typeof parsed.lastLintAt === "number" ? parsed.lastLintAt : null,
     }
   } catch {
@@ -67,6 +71,7 @@ export async function completeAgentLint(
     if (checkedPages === "all") {
       state.pendingPages = []
       state.lastFullLintAt = at
+      state.lastFullLintRunAt = at
     } else {
       const done = new Set(checkedPages.map(normalizePath))
       state.pendingPages = state.pendingPages.filter((p) => !done.has(p))

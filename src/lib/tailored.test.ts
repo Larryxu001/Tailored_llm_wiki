@@ -13,6 +13,7 @@ import {
   diffSnapshots,
   dominantScript,
   localDate,
+  looksEnglish,
   needsTranslation,
   translationPathForIdentity,
 } from "./agent-ingest"
@@ -135,6 +136,10 @@ describe("agent ingest helpers", () => {
     expect(needsTranslation(english, "English")).toBe(false)
     expect(needsTranslation("中际旭创的光模块业务继续增长。".repeat(20), "English")).toBe(true)
     expect(localDate(new Date(2026, 9, 21, 0, 30))).toBe("2026-10-21")
+    const german = "Die Nachfrage nach Speicher ist stark und die Preise steigen, das ist nicht zu unterschätzen, mit den Auftragseingängen von der Industrie. ".repeat(10)
+    expect(looksEnglish(english)).toBe(true)
+    expect(looksEnglish(german)).toBe(false)
+    expect(needsTranslation(german, "English")).toBe(true)
   })
 
   it("builds a prompt that enforces disclosures-skip, the summary path and review format", () => {
@@ -189,7 +194,7 @@ describe("agent lint helpers", () => {
 
   it("schedules full lints and filters lintable pages", () => {
     const day = 24 * 60 * 60 * 1000
-    const state = { version: 1 as const, pendingPages: [], lastFullLintAt: 0, lastLintAt: null }
+    const state = { version: 1 as const, pendingPages: [], lastFullLintAt: 0, lastFullLintRunAt: null, lastLintAt: null }
     expect(fullLintDue({ ...state, lastFullLintAt: null }, 7)).toBe(false)
     expect(fullLintDue(state, 7, 6 * day)).toBe(false)
     expect(fullLintDue(state, 7, 7 * day)).toBe(true)
