@@ -146,6 +146,7 @@ pub async fn codex_cli_spawn(
     agent_mode: Option<bool>,
     reasoning_effort: Option<String>,
     service_tier: Option<String>,
+    subscription_only: Option<bool>,
 ) -> Result<(), String> {
     if prompt.trim().is_empty() {
         return Err("No prompt to send to codex CLI".to_string());
@@ -163,10 +164,12 @@ pub async fn codex_cli_spawn(
     let mut args = build_codex_cli_args(&model, isolate_local_config);
     if agent_mode == Some(true) {
         apply_codex_agent_mode(&mut args, reasoning_effort.as_deref(), service_tier.as_deref());
-        // Agent runs must bill the user's ChatGPT/Codex subscription login,
-        // never a stray API key inherited from the environment.
-        for key in ["OPENAI_API_KEY", "CODEX_API_KEY"] {
-            cmd.env_remove(key);
+        // Agent runs bill the user's ChatGPT/Codex subscription login, not a
+        // stray API key inherited from the environment (opt-out in settings).
+        if subscription_only != Some(false) {
+            for key in ["OPENAI_API_KEY", "CODEX_API_KEY"] {
+                cmd.env_remove(key);
+            }
         }
     }
     cmd.args(args);

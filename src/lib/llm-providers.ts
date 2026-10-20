@@ -74,6 +74,8 @@ export interface RequestOverrides {
   agentTimeoutMinutes?: number
   /** Tailored: Codex service tier for agent runs ("priority" = Fast). */
   agentServiceTier?: string
+  /** Tailored: strip API-key env vars so agent runs use the CLI subscription login. */
+  agentSubscriptionOnly?: boolean
 }
 
 interface ProviderConfig {

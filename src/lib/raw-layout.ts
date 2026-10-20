@@ -63,5 +63,16 @@ export function filterRawLayoutTree(rawChildren: FileNode[]): FileNode[] {
 export async function listRawSourceTree(projectPath: string): Promise<FileNode[]> {
   const pp = normalizePath(projectPath).replace(/\/+$/, "")
   const nodes = await listDirectory(`${pp}/${RAW_DIR}`, true)
-  return filterRawSourceTree(filterRawLayoutTree(nodes))
+  return filterRawSourceTree(flattenLegacySourcesDir(filterRawLayoutTree(nodes)))
+}
+
+/**
+ * Show the contents of raw/sources/ at the top level, next to the user's own
+ * raw/ folders, so existing projects keep their familiar Sources layout.
+ */
+export function flattenLegacySourcesDir(rawChildren: FileNode[]): FileNode[] {
+  const legacy = rawChildren.find((node) => node.is_dir && node.name === "sources")
+  if (!legacy) return rawChildren
+  const others = rawChildren.filter((node) => node !== legacy)
+  return [...(legacy.children ?? []), ...others]
 }

@@ -2290,7 +2290,7 @@ function isOwnedOnlyBySource(content: string, sourceIdentity: string): boolean {
 
 const REVIEW_BLOCK_REGEX = /---REVIEW:\s*(\w[\w-]*)\s*\|\s*(.+?)\s*---\n([\s\S]*?)---END REVIEW---/g
 
-function parseReviewBlocks(
+export function parseReviewBlocks(
   text: string,
   sourcePath: string,
 ): Omit<ReviewItem, "id" | "resolved" | "createdAt">[] {

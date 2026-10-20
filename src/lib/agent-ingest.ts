@@ -80,16 +80,19 @@ export async function snapshotWiki(projectPath: string): Promise<Map<string, str
     }
   }
   walk(tree)
-  await Promise.all(files.map(async (file) => {
-    const abs = normalizePath(file.path)
-    const rel = abs.startsWith(`${pp}/`) ? abs.slice(pp.length + 1) : abs
-    try {
-      const [mtime, size] = await Promise.all([getFileModifiedTime(abs), getFileSize(abs)])
-      snapshot.set(rel, `${mtime}:${size}`)
-    } catch {
-      snapshot.set(rel, "unknown")
-    }
-  }))
+  const SNAPSHOT_CONCURRENCY = 32
+  for (let i = 0; i < files.length; i += SNAPSHOT_CONCURRENCY) {
+    await Promise.all(files.slice(i, i + SNAPSHOT_CONCURRENCY).map(async (file) => {
+      const abs = normalizePath(file.path)
+      const rel = abs.startsWith(`${pp}/`) ? abs.slice(pp.length + 1) : abs
+      try {
+        const [mtime, size] = await Promise.all([getFileModifiedTime(abs), getFileSize(abs)])
+        snapshot.set(rel, `${mtime}:${size}`)
+      } catch {
+        snapshot.set(rel, "unknown")
+      }
+    }))
+  }
   return snapshot
 }
 
@@ -106,6 +109,25 @@ export function diffSnapshots(
     if (!after.has(path)) deleted.push(path)
   }
   return { changed: changed.sort(), deleted: deleted.sort() }
+}
+
+/** Drop index lines that point at pages an agent merged away or deleted. */
+export async function pruneDeletedPagesFromIndex(projectPath: string, deleted: string[]): Promise<boolean> {
+  if (deleted.length === 0) return false
+  const indexPath = `${projectPath}/wiki/index.md`
+  let index = ""
+  try { index = await readFile(indexPath) } catch { return false }
+  const stems = new Set(deleted.map((p) => p.split("/").pop()?.replace(/\.md$/, "") ?? "").filter(Boolean))
+  const lines = index.split("\n")
+  const kept = lines.filter((line) => {
+    const m = line.match(/\[\[([^\]|#]+)/)
+    if (!m) return true
+    const target = m[1].split("/").pop()?.replace(/\.md$/, "") ?? ""
+    return !stems.has(target)
+  })
+  if (kept.length === lines.length) return false
+  await writeFile(indexPath, kept.join("\n"))
+  return true
 }
 
 /** Where the agent writes the full translation of a source. */
@@ -267,8 +289,15 @@ export async function runAgentIngest(
   } finally {
     clearInterval(ticker)
   }
-  if (ctx.signal?.aborted) throw new Error("Ingest cancelled")
-  if (agentError) throw agentError
+  if (ctx.signal?.aborted) {
+    activity.updateItem(ctx.activityId, { status: "error", detail: "Ingest cancelled" })
+    throw new Error("Ingest cancelled")
+  }
+  if (agentError) {
+    const message = (agentError as Error).message
+    activity.updateItem(ctx.activityId, { status: "error", detail: `Agent ingest failed: ${message}` })
+    throw agentError
+  }
 
   const after = await snapshotWiki(pp)
   const { changed, deleted } = diffSnapshots(before, after)
@@ -284,7 +313,15 @@ export async function runAgentIngest(
   }
 
   try {
-    if (await deps.updateIndex(pp, writtenPaths)) {
+    if (await pruneDeletedPagesFromIndex(pp, deleted) && !writtenPaths.includes("wiki/index.md")) {
+      writtenPaths.push("wiki/index.md")
+    }
+  } catch (err) {
+    console.warn("[agent-ingest] index prune failed:", err)
+  }
+
+  try {
+    if (await deps.updateIndex(pp, writtenPaths) && !writtenPaths.includes("wiki/index.md")) {
       writtenPaths.push("wiki/index.md")
       ctx.onFileWritten?.("wiki/index.md")
     }

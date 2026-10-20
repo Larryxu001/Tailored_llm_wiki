@@ -657,7 +657,7 @@ fn enqueue_rescan_changes(
 ) -> Result<(), String> {
     let rules = SourceWatchRules::new(source_watch_config);
     let mut rels = BTreeSet::<String>::new();
-    for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
+    for entry in WalkDir::new(root).into_iter().filter_entry(|e| !is_reserved_raw_dir(root, e.path())).filter_map(Result::ok) {
         if entry.file_type().is_file() {
             if let Some(rel) = relative_watch_path(
                 root,
@@ -723,7 +723,7 @@ fn enqueue_rescan_changes_for_prefixes(
                 }
             }
         } else if path.exists() {
-            for entry in WalkDir::new(&path).into_iter().filter_map(Result::ok) {
+            for entry in WalkDir::new(&path).into_iter().filter_entry(|e| !is_reserved_raw_dir(root, e.path())).filter_map(Result::ok) {
                 if entry.file_type().is_file() {
                     if let Some(rel) = relative_watch_path(
                         root,
@@ -1099,6 +1099,22 @@ fn md5_file(path: &Path) -> Result<String, String> {
 /// folders `raw/assets`, `raw/parsed`, `raw/translations` and hidden folders
 /// (`.cache`, …). `raw/sources/` keeps working exactly as before.
 const RESERVED_RAW_DIRS: [&str; 3] = ["assets", "parsed", "translations"];
+
+/// Tailored: skip app/agent-managed raw/ folders while walking (they can hold
+/// thousands of images or generated copies that are never sources).
+fn is_reserved_raw_dir(root: &Path, path: &Path) -> bool {
+    let Ok(rel) = path.strip_prefix(root) else {
+        return false;
+    };
+    let mut parts = rel.components().filter_map(|c| match c {
+        Component::Normal(s) => Some(s.to_string_lossy().to_lowercase()),
+        _ => None,
+    });
+    matches!(
+        (parts.next().as_deref(), parts.next(), parts.next()),
+        (Some("raw"), Some(dir), None) if RESERVED_RAW_DIRS.contains(&dir.as_str())
+    ) && path.is_dir()
+}
 
 pub(crate) fn is_raw_source_rel(rel: &str) -> bool {
     let Some(rest) = rel.strip_prefix("raw/") else {
@@ -1491,6 +1507,19 @@ mod tests {
         let rules = SourceWatchRules::new(&config);
         assert!(should_watch_rel("raw/海外投行/report.pdf", &rules));
         assert!(!should_watch_rel("raw/translations/report.md", &rules));
+    }
+
+    #[test]
+    fn rescan_skips_reserved_raw_dirs() {
+        let root_buf = temp_root("reserved-raw");
+        let root = root_buf.as_path();
+        fs::create_dir_all(root.join("raw/assets/deep")).unwrap();
+        fs::create_dir_all(root.join("raw/海外投行")).unwrap();
+        assert!(is_reserved_raw_dir(root, &root.join("raw/assets")));
+        assert!(!is_reserved_raw_dir(root, &root.join("raw/assets/deep")));
+        assert!(!is_reserved_raw_dir(root, &root.join("raw/海外投行")));
+        assert!(!is_reserved_raw_dir(root, &root.join("raw")));
+        let _ = fs::remove_dir_all(root);
     }
 
     use super::*;

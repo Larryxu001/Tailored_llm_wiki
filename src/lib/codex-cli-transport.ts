@@ -214,6 +214,7 @@ export async function streamCodexCli(
       agentMode: overrides?.agentMode === true,
       reasoningEffort: overrides?.agentReasoningEffort,
       serviceTier: overrides?.agentServiceTier,
+      subscriptionOnly: overrides?.agentSubscriptionOnly,
     }
     await invoke("codex_cli_spawn", payload)
     if (aborted || signal?.aborted) {

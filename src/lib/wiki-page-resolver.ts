@@ -1,3 +1,4 @@
+import { isRawSourceRelPath } from "@/lib/raw-layout"
 import type { FileNode } from "@/types/wiki"
 
 export interface ProjectPathIndexEntry {
@@ -181,7 +182,22 @@ export function resolveSourceName(
 
   // Otherwise, search raw/sources/, then (Tailored) anywhere under raw/.
   return findInTreeByName(index, ref, `${sourcesRoot}/`) ??
-    findInTreeByName(index, ref, `${projectRoot}/raw/`)
+    findRelaxedRawSourceByName(index, ref, projectRoot)
+}
+
+/** Tailored: a same-named file anywhere under raw/ that is a real source
+ *  (not a translation, parsed copy, asset or hidden cache file). */
+function findRelaxedRawSourceByName(
+  index: ProjectPathIndex,
+  targetName: string,
+  projectRoot: string,
+): string | null {
+  const rawPrefix = `${projectRoot}/`
+  for (const entry of index.filesByName.get(targetName) ?? []) {
+    if (!entry.path.startsWith(rawPrefix)) continue
+    if (isRawSourceRelPath(entry.path.slice(rawPrefix.length))) return entry.path
+  }
+  return null
 }
 
 function findInTreeByPath(index: ProjectPathIndex, targetPath: string): string | null {

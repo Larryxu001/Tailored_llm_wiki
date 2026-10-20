@@ -258,6 +258,7 @@ pub async fn claude_cli_spawn(
     isolate_local_config: bool,
     working_directory: Option<String>,
     agent_mode: Option<bool>,
+    subscription_only: Option<bool>,
 ) -> Result<(), String> {
     // Build the turn list: fold any system messages into a preamble on
     // the first user turn rather than using a CLI flag, because
@@ -304,10 +305,13 @@ pub async fn claude_cli_spawn(
     let mut args = build_claude_cli_args(&model, isolate_local_config);
     if agent_mode == Some(true) {
         apply_claude_agent_mode(&mut args);
-        // Agent runs must use the claude.ai subscription login, never an API
-        // key inherited from the environment (which would switch billing).
-        for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
-            cmd.env_remove(key);
+        // Agent runs use the claude.ai subscription login, not an API key
+        // inherited from the environment (opt-out in settings for users who
+        // authenticate Claude Code with a key).
+        if subscription_only != Some(false) {
+            for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
+                cmd.env_remove(key);
+            }
         }
     }
     cmd.args(args);

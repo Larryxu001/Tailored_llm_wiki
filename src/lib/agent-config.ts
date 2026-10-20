@@ -32,6 +32,8 @@ export interface AgentConfig {
   codexModel: string
   /** Claude Code model alias or ID ("" = use the LLM provider setting). */
   claudeModel: string
+  /** Strip API-key env vars so agent runs always use the CLI subscription login. */
+  subscriptionOnly: boolean
   /** Subprocess timeout for one agent run. */
   timeoutMinutes: number
 }
@@ -45,6 +47,7 @@ export const DEFAULT_AGENT_CONFIG: AgentConfig = {
   serviceTier: "default",
   codexModel: "",
   claudeModel: "",
+  subscriptionOnly: true,
   timeoutMinutes: 60,
 }
 
@@ -67,6 +70,7 @@ export function normalizeAgentConfig(value: unknown): AgentConfig {
     serviceTier: v.serviceTier === "priority" ? "priority" : "default",
     codexModel: typeof v.codexModel === "string" ? v.codexModel.trim() : "",
     claudeModel: typeof v.claudeModel === "string" ? v.claudeModel.trim() : "",
+    subscriptionOnly: v.subscriptionOnly !== false,
     timeoutMinutes: Number.isFinite(v.timeoutMinutes)
       ? Math.max(5, Math.min(240, Math.round(Number(v.timeoutMinutes))))
       : DEFAULT_AGENT_CONFIG.timeoutMinutes,
@@ -121,6 +125,7 @@ export function agentRequestOverrides(config: AgentConfig = useAgentConfigStore.
     agentReasoningEffort: config.reasoningEffort === "default" ? undefined : config.reasoningEffort,
     agentServiceTier: config.serviceTier === "priority" ? "priority" : undefined,
     agentTimeoutMinutes: config.timeoutMinutes,
+    agentSubscriptionOnly: config.subscriptionOnly,
   }
 }
 

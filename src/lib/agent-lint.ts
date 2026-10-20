@@ -18,14 +18,15 @@ import type { LlmConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useActivityStore } from "@/stores/activity-store"
 import { useReviewStore, type ReviewItem } from "@/stores/review-store"
-import { readFile, writeFile } from "@/commands/fs"
+import { readFile } from "@/commands/fs"
+import { parseReviewBlocks } from "@/lib/ingest"
 import { normalizePath } from "@/lib/path-utils"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { withProjectLock } from "@/lib/project-mutex"
 import { getLanguagePromptName } from "@/lib/language-metadata"
 import { getOutputLanguage } from "@/lib/output-language"
 import { agentLlmConfig, agentRequestOverrides, supportsAgentMode, useAgentConfigStore } from "@/lib/agent-config"
-import { diffSnapshots, snapshotWiki } from "@/lib/agent-ingest"
+import { diffSnapshots, pruneDeletedPagesFromIndex, snapshotWiki } from "@/lib/agent-ingest"
 import {
   completeAgentLint,
   ensureFullLintBaseline,
@@ -43,37 +44,12 @@ export interface AgentLintResult {
   skipped?: string
 }
 
-const REVIEW_BLOCK_REGEX = /---REVIEW:\s*(\w[\w-]*)\s*\|\s*(.+?)\s*---\n([\s\S]*?)---END REVIEW---/g
-
-/** Same block format as ingest; kept local so ingest.ts stays untouched. */
+/** Same block format as ingest; reuses ingest's parser so both stay in sync. */
 export function parseAgentReviewBlocks(
   text: string,
-  sourcePath?: string,
+  sourcePath = "",
 ): Omit<ReviewItem, "id" | "resolved" | "createdAt">[] {
-  const items: Omit<ReviewItem, "id" | "resolved" | "createdAt">[] = []
-  for (const match of text.matchAll(REVIEW_BLOCK_REGEX)) {
-    const rawType = match[1].trim().toLowerCase()
-    const type = (
-      ["contradiction", "duplicate", "missing-page", "suggestion", "confirm"].includes(rawType)
-        ? rawType
-        : "confirm"
-    ) as ReviewItem["type"]
-    const body = match[3].trim()
-    const optionsLine = body.match(/^OPTIONS:\s*(.+)$/m)
-    const pagesLine = body.match(/^PAGES:\s*(.+)$/m)
-    const options = optionsLine
-      ? optionsLine[1].split("|").map((o) => o.trim()).filter(Boolean).map((label) => ({ label, action: label }))
-      : [{ label: "Approve", action: "Approve" }, { label: "Skip", action: "Skip" }]
-    items.push({
-      type,
-      title: match[2].trim(),
-      description: body.replace(/^OPTIONS:.*$/m, "").replace(/^PAGES:.*$/m, "").replace(/^SEARCH:.*$/m, "").trim(),
-      sourcePath,
-      affectedPages: pagesLine ? pagesLine[1].split(",").map((p) => p.trim()).filter(Boolean) : undefined,
-      options,
-    })
-  }
-  return items
+  return parseReviewBlocks(text, sourcePath)
 }
 
 export function buildAgentLintPrompt(scope: AgentLintScope, outputLanguage: string, today: string): string {
@@ -169,9 +145,13 @@ async function runAgentLintImpl(
   // lock ingest uses; an ingest and a lint never write at the same time.
   return withProjectLock(pp, async () => {
     const agentConfig = useAgentConfigStore.getState().config
-    let overviewSample = ""
-    try { overviewSample = await readFile(`${pp}/purpose.md`) } catch { /* optional */ }
-    const outputLanguage = getLanguagePromptName(getOutputLanguage(overviewSample))
+    // Language sample from the wiki itself (log + overview), not the rule
+    // files, which may be written in English for token economy.
+    let sample = ""
+    for (const rel of ["wiki/log.md", "wiki/overview.md"]) {
+      try { sample += (await readFile(`${pp}/${rel}`)).slice(-8000) } catch { /* optional */ }
+    }
+    const outputLanguage = getLanguagePromptName(getOutputLanguage(sample))
     const prompt = buildAgentLintPrompt(scope, outputLanguage, new Date().toISOString().slice(0, 10))
 
     const before = await snapshotWiki(pp)
@@ -236,21 +216,6 @@ async function runAgentLintImpl(
     })
     return { changedPages, deletedPages: deleted, reviewItems: reviewItems.length }
   })
-}
-
-/** Drop index lines that point at pages the agent merged away. */
-async function pruneDeletedPagesFromIndex(projectPath: string, deleted: string[]): Promise<void> {
-  const indexPath = `${projectPath}/wiki/index.md`
-  let index = ""
-  try { index = await readFile(indexPath) } catch { return }
-  const stems = new Set(deleted.map((p) => p.split("/").pop()?.replace(/\.md$/, "") ?? "").filter(Boolean))
-  const kept = index.split("\n").filter((line) => {
-    const m = line.match(/\[\[([^\]|#]+)/)
-    if (!m) return true
-    const target = m[1].split("/").pop()?.replace(/\.md$/, "") ?? ""
-    return !stems.has(target)
-  })
-  if (kept.length !== index.split("\n").length) await writeFile(indexPath, kept.join("\n"))
 }
 
 async function reembedPages(projectPath: string, pages: string[]): Promise<void> {

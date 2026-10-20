@@ -73,7 +73,7 @@ export function AgentSection() {
   }
 
   const checkbox = (
-    key: "ingestEnabled" | "translateSources" | "lintAfterIngest",
+    key: "ingestEnabled" | "translateSources" | "lintAfterIngest" | "subscriptionOnly",
     title: string,
     description: string,
   ) => (
@@ -122,6 +122,12 @@ export function AgentSection() {
           "lintAfterIngest",
           "每批摄入后自动体检",
           "摄入队列跑完后，对本批改动过的页面及其相邻页面做一次 Agent 体检：机械问题直接修，判断题进入待审阅。",
+        )}
+
+        {checkbox(
+          "subscriptionOnly",
+          "只用订阅额度",
+          "Agent 运行时忽略 OPENAI_API_KEY / ANTHROPIC_API_KEY 等环境变量，始终使用 codex / claude 命令行登录的订阅账号。只用 API Key 登录的用户请关闭。",
         )}
 
         <div className="grid gap-4 sm:grid-cols-2">
