@@ -62,6 +62,18 @@ export interface RequestOverrides {
   max_tokens?: number
   stop?: string | string[]
   reasoning?: ReasoningConfig
+  /**
+   * Tailored: local CLI providers only. Runs Claude Code / Codex as a file-
+   * editing agent inside the project directory (one run per task) instead of
+   * as a read-only text model.
+   */
+  agentMode?: boolean
+  /** Tailored: Codex reasoning effort for agent runs (minimal|low|medium|high|xhigh). */
+  agentReasoningEffort?: string
+  /** Tailored: subprocess timeout override for agent runs, in minutes. */
+  agentTimeoutMinutes?: number
+  /** Tailored: Codex service tier for agent runs ("priority" = Fast). */
+  agentServiceTier?: string
 }
 
 interface ProviderConfig {

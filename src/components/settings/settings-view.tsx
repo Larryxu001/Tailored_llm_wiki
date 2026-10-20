@@ -38,6 +38,7 @@ import type { SettingsDraft, DraftSetter } from "./settings-types"
 import { normalizeSourceWatchConfig } from "@/lib/source-watch-config"
 import { setIngestWorkerLimit } from "@/lib/ingest-queue"
 import { LlmProviderSection } from "./sections/llm-provider-section"
+import { AgentSection } from "./sections/agent-section"
 import { EmbeddingSection } from "./sections/embedding-section"
 import { MultimodalSection } from "./sections/multimodal-section"
 import { WebSearchSection } from "./sections/web-search-section"
@@ -56,6 +57,7 @@ import { AboutSection } from "./sections/about-section"
 type CategoryId =
   | "general"
   | "llm"
+  | "agent"
   | "embedding"
   | "multimodal"
   | "web-search"
@@ -82,6 +84,7 @@ interface Category {
 const CATEGORIES: Category[] = [
   { id: "general", labelKey: "settings.categories.general", icon: Settings },
   { id: "llm", labelKey: "settings.categories.llm", icon: Bot },
+  { id: "agent", labelKey: "settings.categories.agent", icon: Bot },
   { id: "embedding", labelKey: "settings.categories.embedding", icon: Binary },
   { id: "multimodal", labelKey: "settings.categories.multimodal", icon: ImageIcon },
   { id: "web-search", labelKey: "settings.categories.webSearch", icon: Globe },
@@ -666,6 +669,8 @@ export function SettingsView() {
         // configs + active preset) and persists directly — it bypasses
         // the shared draft / global Save button.
         return <LlmProviderSection />
+      case "agent":
+        return <AgentSection />
       case "embedding":
         return <EmbeddingSection draft={draft} setDraft={setDraft} />
       case "multimodal":
@@ -755,7 +760,7 @@ export function SettingsView() {
         {/* Global Save bar hidden for sections that persist inline:
             - "llm" saves per-row on every edit (independent per-preset state)
             - "about" has no draft-bound fields */}
-        {active !== "about" && active !== "llm" && (
+        {active !== "about" && active !== "llm" && active !== "agent" && (
           <div className="shrink-0 border-t bg-background/80 backdrop-blur px-8 py-3">
             <div className="mx-auto flex max-w-2xl items-center justify-between gap-4">
               <p className={`text-xs ${saveError ? "text-destructive" : "text-muted-foreground"}`}>

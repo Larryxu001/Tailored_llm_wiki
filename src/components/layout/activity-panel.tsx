@@ -77,6 +77,25 @@ function getFileTypeInfo(path: string): { icon: typeof FileText; typeKey: string
   return { icon: FileText, typeKey: "file" }
 }
 
+const PANEL_HEIGHT_KEY = "tailored.activityPanelHeight"
+const DEFAULT_PANEL_HEIGHT = 256
+const MIN_PANEL_HEIGHT = 80
+
+function clampPanelHeight(height: number): number {
+  const max = Math.max(MIN_PANEL_HEIGHT, Math.round(window.innerHeight * 0.85))
+  return Math.min(max, Math.max(MIN_PANEL_HEIGHT, Math.round(height)))
+}
+
+function readStoredPanelHeight(): number {
+  try {
+    const stored = Number(localStorage.getItem(PANEL_HEIGHT_KEY))
+    if (Number.isFinite(stored) && stored > 0) return clampPanelHeight(stored)
+  } catch {
+    // ignore
+  }
+  return DEFAULT_PANEL_HEIGHT
+}
+
 export function ActivityPanel() {
   const { t } = useTranslation()
   const appDialog = useAppDialog()
@@ -87,6 +106,29 @@ export function ActivityPanel() {
   const setFileSyncTasks = useFileSyncStore((s) => s.setTasks)
   const fileSyncError = useFileSyncStore((s) => s.lastError)
   const [expanded, setExpanded] = useState(false)
+  // Tailored: the expanded panel height is user-resizable (drag the top edge).
+  const [panelHeight, setPanelHeight] = useState<number>(() => readStoredPanelHeight())
+  const startResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const startY = event.clientY
+    const startHeight = panelHeight
+    const onMove = (move: PointerEvent) => {
+      setPanelHeight(clampPanelHeight(startHeight + (startY - move.clientY)))
+    }
+    const onUp = (up: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", onUp)
+      document.body.style.cursor = ""
+      document.body.style.userSelect = ""
+      const finalHeight = clampPanelHeight(startHeight + (startY - up.clientY))
+      setPanelHeight(finalHeight)
+      try { localStorage.setItem(PANEL_HEIGHT_KEY, String(finalHeight)) } catch { /* ignore */ }
+    }
+    document.body.style.cursor = "row-resize"
+    document.body.style.userSelect = "none"
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }, [panelHeight])
   const [queueTasks, setQueueTasks] = useState<IngestTask[]>(() => [...getQueue()])
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set())
   const prevRunningRef = useRef(0)
@@ -271,6 +313,19 @@ export function ActivityPanel() {
 
   return (
     <div className="border-t bg-muted/30">
+      {expanded && (
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          title="拖动调整高度"
+          onPointerDown={startResize}
+          onDoubleClick={() => {
+            setPanelHeight(DEFAULT_PANEL_HEIGHT)
+            try { localStorage.setItem(PANEL_HEIGHT_KEY, String(DEFAULT_PANEL_HEIGHT)) } catch { /* ignore */ }
+          }}
+          className="h-1.5 w-full cursor-row-resize bg-border/40 transition-colors hover:bg-primary/30 active:bg-primary/40"
+        />
+      )}
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent/50"
@@ -291,7 +346,7 @@ export function ActivityPanel() {
       </button>
 
       {expanded && (
-        <div className="max-h-64 overflow-y-auto border-t">
+        <div className="overflow-y-auto border-t" style={{ height: panelHeight }}>
           {hasFileSync && (
             <div className="border-b border-border/50 px-3 py-1.5">
               <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">

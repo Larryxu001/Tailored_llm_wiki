@@ -19,13 +19,12 @@
  *     user moved / deleted the original after ingest, leaving only
  *     the wiki summary). Callers fall back gracefully.
  */
-import { listDirectory } from "@/commands/fs"
+import { listRawSourceTree } from "@/lib/raw-layout"
 import {
   sourceIdentityForPath,
   sourceSummarySlugCandidatesFromIdentity,
 } from "@/lib/source-identity"
 import type { FileNode } from "@/types/wiki"
-import { filterRawSourceTree } from "@/lib/source-filter"
 
 export async function findRawSourceForImage(
   imageUrl: string,
@@ -42,7 +41,7 @@ export async function findRawSourceForImage(
 
   let tree: FileNode[]
   try {
-    tree = filterRawSourceTree(await listDirectory(`${normalizedProjectPath}/raw/sources`, true))
+    tree = await listRawSourceTree(normalizedProjectPath)
   } catch {
     return null
   }

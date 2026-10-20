@@ -291,7 +291,7 @@ pub fn start_project_file_watcher(
         watcher
             .watch(&root, RecursiveMode::Recursive)
             .map_err(|e| format!("Failed to watch '{}': {e}", root.display()))?;
-        for rel in ["raw/sources", "wiki"] {
+        for rel in ["raw", "wiki"] {
             let path = root.join(rel);
             if path.exists() {
                 if let Err(err) = watcher.watch(&path, RecursiveMode::Recursive) {
@@ -562,9 +562,9 @@ fn rescan_watch_roots(
     // watches can miss subtree creation. Other platforms reconcile source
     // inputs only to avoid a recurring generated-wiki scan.
     let prefixes = if cfg!(target_os = "linux") {
-        &["raw/sources", "wiki", "purpose.md", "schema.md"][..]
+        &["raw", "wiki", "purpose.md", "schema.md"][..]
     } else {
-        &["raw/sources"][..]
+        &["raw"][..]
     };
     enqueue_rescan_changes_for_prefixes(root, project_id, prefixes, source_watch_config)?;
     if !is_active_watcher_generation(watcher_generation) {
@@ -687,7 +687,7 @@ fn enqueue_startup_rescan_changes(
     enqueue_rescan_changes_for_prefixes(
         root,
         project_id,
-        &["raw/sources", "wiki", "purpose.md", "schema.md"],
+        &["raw", "wiki", "purpose.md", "schema.md"],
         source_watch_config,
     )
 }
@@ -1095,6 +1095,25 @@ fn md5_file(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
+/// Tailored: any file under `raw/` is a source, except the app/agent-managed
+/// folders `raw/assets`, `raw/parsed`, `raw/translations` and hidden folders
+/// (`.cache`, …). `raw/sources/` keeps working exactly as before.
+const RESERVED_RAW_DIRS: [&str; 3] = ["assets", "parsed", "translations"];
+
+pub(crate) fn is_raw_source_rel(rel: &str) -> bool {
+    let Some(rest) = rel.strip_prefix("raw/") else {
+        return false;
+    };
+    let segments: Vec<&str> = rest.split('/').collect();
+    if segments.is_empty() || segments.iter().any(|s| s.is_empty()) {
+        return false;
+    }
+    if segments.len() > 1 && RESERVED_RAW_DIRS.contains(&segments[0].to_lowercase().as_str()) {
+        return false;
+    }
+    !segments[..segments.len() - 1].iter().any(|s| s.starts_with('.'))
+}
+
 fn relative_watch_path(
     root: &Path,
     path: &Path,
@@ -1106,7 +1125,7 @@ fn relative_watch_path(
     if !should_watch_rel(&rel, rules) {
         return None;
     }
-    if rel.starts_with("raw/sources/") && path.exists() {
+    if is_raw_source_rel(&rel) && path.exists() {
         let max_bytes = rules.config.max_file_size_mb.saturating_mul(1024 * 1024);
         let size = size.or_else(|| fs::metadata(path).ok().map(|m| m.len()))?;
         if size > max_bytes {
@@ -1157,7 +1176,7 @@ fn should_watch_rel(rel: &str, rules: &SourceWatchRules) -> bool {
     {
         return false;
     }
-    if rel.starts_with("raw/sources/") {
+    if is_raw_source_rel(rel) {
         let ext = extension_of(name);
         if !ext.is_empty() && rules.exclude_extensions.contains(ext) {
             return false;
@@ -1458,6 +1477,22 @@ fn is_app_write_ignored(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn raw_sources_are_relaxed_beyond_raw_sources_dir() {
+        assert!(is_raw_source_rel("raw/sources/a.md"));
+        assert!(is_raw_source_rel("raw/海外投行/2026-10/report.pdf"));
+        assert!(is_raw_source_rel("raw/report.pdf"));
+        assert!(!is_raw_source_rel("raw/assets/img.png"));
+        assert!(!is_raw_source_rel("raw/parsed/report.pdf.md"));
+        assert!(!is_raw_source_rel("raw/translations/report.md"));
+        assert!(!is_raw_source_rel("raw/海外投行/.cache/report.pdf.txt"));
+        assert!(!is_raw_source_rel("wiki/a.md"));
+        let config = default_watch_config();
+        let rules = SourceWatchRules::new(&config);
+        assert!(should_watch_rel("raw/海外投行/report.pdf", &rules));
+        assert!(!should_watch_rel("raw/translations/report.md", &rules));
+    }
+
     use super::*;
 
     fn temp_root(name: &str) -> PathBuf {

@@ -325,6 +325,7 @@ export async function streamClaudeCodeCli(
       messages,
       isolateLocalConfig: config.localCliIsolation === true,
       workingDirectory,
+      agentMode: overrides?.agentMode === true,
     }
     await invoke("claude_cli_spawn", payload)
     if (aborted || signal?.aborted) {

@@ -479,6 +479,7 @@
     "languageHint": "Lingua dell'interfaccia (i contenuti del wiki seguono la lingua del materiale di origine)",
     "categories": {
       "general": "Generale",
+      "agent": "Agent",
       "llm": "Modelli LLM",
       "embedding": "Embedding",
       "multimodal": "Didascalie immagini",

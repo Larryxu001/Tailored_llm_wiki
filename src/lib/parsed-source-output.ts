@@ -1,5 +1,6 @@
+import { isRawSourceRelPath, rawSourceIdentityFromRel } from "@/lib/raw-layout"
 import { createDirectory, deleteFile, readFile, writeFileAtomic } from "@/commands/fs"
-import { getFileName, getRelativePath, isAbsolutePath, normalizePath } from "@/lib/path-utils"
+import { getFileName, isAbsolutePath, normalizePath } from "@/lib/path-utils"
 
 const PARSED_MARKDOWN_EXTENSIONS = new Set([
   "pdf",
@@ -39,11 +40,13 @@ export function parsedMarkdownOutputPath(
 ): string | null {
   const project = normalizePath(projectPath).replace(/\/+$/, "")
   const source = normalizePath(sourcePath)
-  const sourceRoot = `${project}/raw/sources`
-  const relative = source.toLowerCase().startsWith("raw/sources/")
-    ? source.slice("raw/sources/".length)
-    : getRelativePath(source, sourceRoot)
-  if (!relative || (relative === source && !source.toLowerCase().startsWith("raw/sources/")) || isAbsolutePath(relative)) return null
+  // Tailored: relaxed raw/ layout — any raw source maps to raw/parsed/<identity>.md
+  const projectRelative = source.toLowerCase().startsWith(`${project.toLowerCase()}/`)
+    ? source.slice(project.length + 1)
+    : source
+  if (!isRawSourceRelPath(projectRelative)) return null
+  const relative = rawSourceIdentityFromRel(projectRelative) ?? ""
+  if (!relative || isAbsolutePath(relative)) return null
   if (relative.split("/").some((part) => !part || part === "." || part === "..")) return null
 
   const fileName = getFileName(relative)

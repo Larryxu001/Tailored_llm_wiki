@@ -977,6 +977,18 @@ async function onQueueDrained(projectId: string, projectPath: string, epoch: num
     await sweepResolvedReviews(projectPath, signal)
   } catch (err) {
     console.error("[Ingest Queue] Failed to load sweep-reviews:", err)
+  }
+
+  // Tailored: self-correcting agent lint over what this batch touched
+  // (and a periodic full-wiki pass when due).
+  try {
+    if (currentProjectId === projectId && queueEpoch === epoch && !signal.aborted) {
+      const { getTaskLlmConfig } = await import("@/lib/llm-task-routing")
+      const { runAgentLintAfterIngestBatch } = await import("@/lib/agent-lint")
+      await runAgentLintAfterIngestBatch(projectPath, getTaskLlmConfig("ingest"), signal)
+    }
+  } catch (err) {
+    console.error("[Ingest Queue] Agent lint after batch failed:", err)
   } finally {
     if (sweepAbortController && sweepAbortController.signal === signal) {
       sweepAbortController = null

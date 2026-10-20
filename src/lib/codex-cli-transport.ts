@@ -65,6 +65,9 @@ type SpawnPayload = Record<string, unknown> & {
   isolateLocalConfig: boolean
   timeoutMinutes?: number
   workingDirectory?: string
+  agentMode?: boolean
+  reasoningEffort?: string
+  serviceTier?: string
 }
 
 export async function streamCodexCli(
@@ -206,8 +209,11 @@ export async function streamCodexCli(
       model: config.model,
       prompt: buildPrompt(messages),
       isolateLocalConfig: config.localCliIsolation === true,
-      timeoutMinutes: config.codexCliTimeoutMinutes,
+      timeoutMinutes: overrides?.agentTimeoutMinutes ?? config.codexCliTimeoutMinutes,
       workingDirectory,
+      agentMode: overrides?.agentMode === true,
+      reasoningEffort: overrides?.agentReasoningEffort,
+      serviceTier: overrides?.agentServiceTier,
     }
     await invoke("codex_cli_spawn", payload)
     if (aborted || signal?.aborted) {

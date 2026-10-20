@@ -1,3 +1,4 @@
+import { listRawSourceTree } from "@/lib/raw-layout"
 import { memo, useCallback, useEffect, useRef, useState, useMemo } from "react"
 import { useTranslation } from "react-i18next"
 import { convertFileSrc } from "@tauri-apps/api/core"
@@ -14,7 +15,7 @@ import {
 } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { useWikiStore } from "@/stores/wiki-store"
-import { readFile, writeFile, listDirectory } from "@/commands/fs"
+import { readFile, writeFile } from "@/commands/fs"
 import { lastQueryPages } from "@/components/chat/chat-panel"
 import type { DisplayMessage, MessageReference } from "@/stores/chat-store"
 import type { FileNode } from "@/types/wiki"
@@ -34,7 +35,6 @@ import { MermaidDiagram, unwrapMermaidPre } from "@/components/mermaid-diagram"
 import { inferWikiTypeFromPath } from "@/lib/wiki-page-types"
 import { cleanAssistantContentForWikiSave, titleFromCleanAssistantContent } from "@/lib/chat-save-to-wiki"
 import type { ChatAgentEvent, ChatAgentEventStage, ChatAgentStep, ChatUserInputField, ChatUserInputRequest } from "@/lib/chat-agent-types"
-import { filterRawSourceTree } from "@/lib/source-filter"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { getFileCategory, getFileExtension, isTextReadable } from "@/lib/file-types"
 import { AgentFileActivity } from "@/components/chat/agent-file-activity"
@@ -49,8 +49,7 @@ export function useSourceFiles() {
   useEffect(() => {
     if (!project) return
     const pp = normalizePath(project.path)
-    listDirectory(`${pp}/raw/sources`, true)
-      .then(filterRawSourceTree)
+    listRawSourceTree(pp)
       .then((tree) => {
         cachedSourceFiles = flattenNames(tree)
       })

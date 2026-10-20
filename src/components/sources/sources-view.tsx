@@ -1,3 +1,4 @@
+import { listRawSourceTree, rawSourceRelCandidates } from "@/lib/raw-layout"
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { Plus, FileText, RefreshCw, BookOpen, Trash2, Folder, ChevronRight, ChevronDown, Link, ExternalLink, Search, X } from "lucide-react"
@@ -6,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useWikiStore } from "@/stores/wiki-store"
-import { listDirectory, openPathInProject, readFile } from "@/commands/fs"
+import { openPathInProject, readFile } from "@/commands/fs"
 import type { FileNode } from "@/types/wiki"
 import { useTranslation } from "react-i18next"
 import { useAppDialog } from "@/stores/app-dialog-store"
@@ -23,7 +24,6 @@ import {
   type SkippedSourceImport,
   type SourceImportResult,
 } from "@/lib/source-lifecycle"
-import { filterRawSourceTree } from "@/lib/source-filter"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { importSourceUrls, parseImportUrls, type UrlImportResult } from "@/lib/url-source-import"
@@ -86,8 +86,8 @@ export function SourcesView() {
     if (!project) return
     const pp = normalizePath(project.path)
     try {
-      const tree = await listDirectory(`${pp}/raw/sources`, true)
-      setSources(filterRawSourceTree(tree))
+      // Tailored: relaxed raw/ layout — list every source folder under raw/
+      setSources(await listRawSourceTree(pp))
       setRefreshError(null)
     } catch (err) {
       setRefreshError(String(err))
@@ -133,7 +133,9 @@ export function SourcesView() {
     if (!project) return statuses
     const pp = normalizePath(project.path)
     for (const identity of ingestedIdentities) {
-      statuses.set(`${pp}/raw/sources/${normalizePath(identity)}`, "ingested")
+      for (const rel of rawSourceRelCandidates(identity)) {
+        statuses.set(`${pp}/${rel}`, "ingested")
+      }
     }
     for (const task of queueSnapshot) {
       if (task.projectId !== project.id || task.status === "done") continue

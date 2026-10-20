@@ -160,6 +160,8 @@ export function resolveSourceName(
       ? [`${projectRoot}/${normalizedRef}`]
       : [
           `${sourcesRoot}/${normalizedRef}`,
+          // Tailored: relaxed raw/ layout
+          `${projectRoot}/raw/${normalizedRef}`,
           `${projectRoot}/${normalizedRef}`,
         ]
 
@@ -177,8 +179,9 @@ export function resolveSourceName(
     if (inWiki) return inWiki
   }
 
-  // Otherwise, search raw/sources/.
-  return findInTreeByName(index, ref, `${sourcesRoot}/`)
+  // Otherwise, search raw/sources/, then (Tailored) anywhere under raw/.
+  return findInTreeByName(index, ref, `${sourcesRoot}/`) ??
+    findInTreeByName(index, ref, `${projectRoot}/raw/`)
 }
 
 function findInTreeByPath(index: ProjectPathIndex, targetPath: string): string | null {

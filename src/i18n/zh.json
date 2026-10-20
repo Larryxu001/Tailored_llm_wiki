@@ -479,6 +479,7 @@
     "languageHint": "界面语言（Wiki 内容语言以原始资料为准）",
     "categories": {
       "general": "通用",
+      "agent": "Agent 模式",
       "llm": "LLM 模型",
       "embedding": "向量嵌入",
       "multimodal": "图片描述",

@@ -143,6 +143,9 @@ pub async fn codex_cli_spawn(
     isolate_local_config: bool,
     timeout_minutes: Option<u64>,
     working_directory: Option<String>,
+    agent_mode: Option<bool>,
+    reasoning_effort: Option<String>,
+    service_tier: Option<String>,
 ) -> Result<(), String> {
     if prompt.trim().is_empty() {
         return Err("No prompt to send to codex CLI".to_string());
@@ -157,7 +160,16 @@ pub async fn codex_cli_spawn(
     if let Some(path_env) = child_path_env().await {
         cmd.env("PATH", path_env);
     }
-    cmd.args(build_codex_cli_args(&model, isolate_local_config));
+    let mut args = build_codex_cli_args(&model, isolate_local_config);
+    if agent_mode == Some(true) {
+        apply_codex_agent_mode(&mut args, reasoning_effort.as_deref(), service_tier.as_deref());
+        // Agent runs must bill the user's ChatGPT/Codex subscription login,
+        // never a stray API key inherited from the environment.
+        for key in ["OPENAI_API_KEY", "CODEX_API_KEY"] {
+            cmd.env_remove(key);
+        }
+    }
+    cmd.args(args);
     cmd.current_dir(&working_directory);
 
     cmd.stdin(Stdio::piped())
@@ -319,6 +331,38 @@ fn build_codex_cli_args(model: &str, isolate_local_config: bool) -> Vec<String> 
     args
 }
 
+/// Tailored: agent mode lets Codex read and write files inside the project
+/// working directory in a single run (one `codex exec` per source) instead of
+/// acting as a read-only text model. Memories are disabled so results do not
+/// depend on the user's personal Codex history.
+fn apply_codex_agent_mode(
+    args: &mut Vec<String>,
+    reasoning_effort: Option<&str>,
+    service_tier: Option<&str>,
+) {
+    if let Some(pos) = args.iter().position(|arg| arg == "read-only") {
+        args[pos] = "workspace-write".to_string();
+    }
+    let stdin_pos = args.iter().rposition(|arg| arg == "-").unwrap_or(args.len());
+    let mut extra = vec!["--disable".to_string(), "memories".to_string()];
+    if let Some(effort) = reasoning_effort
+        .map(str::trim)
+        .filter(|e| ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"].contains(e))
+    {
+        extra.push("-c".to_string());
+        extra.push(format!("model_reasoning_effort=\"{effort}\""));
+    }
+    // "priority" is Codex's Fast tier (faster, uses more of the subscription).
+    if let Some(tier) = service_tier
+        .map(str::trim)
+        .filter(|t| ["default", "priority", "flex"].contains(t))
+    {
+        extra.push("-c".to_string());
+        extra.push(format!("service_tier=\"{tier}\""));
+    }
+    args.splice(stdin_pos..stdin_pos, extra);
+}
+
 async fn resolve_codex_working_directory(value: Option<String>) -> Result<PathBuf, String> {
     let raw = value
         .as_deref()
@@ -410,6 +454,28 @@ mod tests {
             codex_spawn_timeout_minutes(Some(999)),
             MAX_CODEX_SPAWN_TIMEOUT_MINUTES
         );
+    }
+
+    #[test]
+    fn codex_agent_mode_allows_workspace_writes_and_disables_memories() {
+        let mut args = build_codex_cli_args("gpt-5", false);
+        apply_codex_agent_mode(&mut args, Some("medium"), Some("priority"));
+        assert!(args.contains(&"workspace-write".to_string()));
+        assert!(!args.contains(&"read-only".to_string()));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--disable" && pair[1] == "memories"));
+        assert!(args.contains(&"model_reasoning_effort=\"medium\"".to_string()));
+        assert!(args.contains(&"service_tier=\"priority\"".to_string()));
+        assert_eq!(args.last().map(String::as_str), Some("-"));
+    }
+
+    #[test]
+    fn codex_agent_mode_ignores_unknown_reasoning_effort() {
+        let mut args = build_codex_cli_args("gpt-5", false);
+        apply_codex_agent_mode(&mut args, Some("auto"), Some("turbo"));
+        assert!(!args.iter().any(|arg| arg.starts_with("model_reasoning_effort")));
+        assert!(!args.iter().any(|arg| arg.starts_with("service_tier")));
     }
 
     #[test]

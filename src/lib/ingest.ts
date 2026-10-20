@@ -28,6 +28,8 @@ import { checkIngestCache, saveIngestCache } from "@/lib/ingest-cache"
 import { sanitizeIngestedFileContent } from "@/lib/ingest-sanitize"
 import { mergePageContent, type MergeFn } from "@/lib/page-merge"
 import { withProjectLock } from "@/lib/project-mutex"
+import { agentIngestActive } from "@/lib/agent-config"
+import { pageTitleFromContent, runAgentIngest } from "@/lib/agent-ingest"
 import { parseFrontmatter } from "@/lib/frontmatter"
 import { makeQuerySlug } from "@/lib/wiki-filename"
 import type { FileNode } from "@/types/wiki"
@@ -948,6 +950,66 @@ async function autoIngestImpl(
     console.log(
       `[ingest:images] saved ${savedImages.length} image(s) for "${sourceIdentity}" → wiki/media/${sourceSummarySlug}/`,
     )
+  }
+
+  // ── Tailored: agent ingest ────────────────────────────────────
+  // One Codex / Claude Code run reads the source, searches and rewrites the
+  // wiki in place, and reports review items. Everything deterministic below
+  // (index, log, review IDs, cache, embeddings) stays with the app.
+  if (agentIngestActive(llmConfig)) {
+    return runCommit(async () => {
+      throwIfIngestAborted(signal, activityId)
+      return runAgentIngest(
+        {
+          projectPath: pp,
+          sourcePath: sp,
+          sourceIdentity,
+          sourceSummaryPath,
+          sourceContent,
+          savedImages,
+          folderContext,
+          llmConfig,
+          signal,
+          activityId,
+          onFileWritten,
+        },
+        {
+          updateIndex: updateWikiIndexDeterministically,
+          parseReviews: parseReviewBlocks,
+          buildLog: (existing, identity) => buildDeterministicIngestLog(existing, identity),
+          injectImages: async () => {
+            if (!useWikiStore.getState().multimodalConfig.enabled || savedImages.length === 0) return
+            await injectImagesIntoSourceSummary(
+              pp,
+              sourceIdentity,
+              sourceSummarySlug,
+              savedImages,
+              getLanguagePromptName(getOutputLanguage(sourceContent)),
+            )
+          },
+          embedPages: async (paths) => {
+            const embCfg = useWikiStore.getState().embeddingConfig
+            if (!embCfg.enabled || !embCfg.model) return
+            try {
+              const { embedPage, wikiPageIdFromPath } = await import("@/lib/embedding")
+              for (const wpath of paths) {
+                const pageId = wikiPageIdFromPath(pp, wpath)
+                const stem = wpath.split("/").pop()?.replace(/\.md$/, "") ?? ""
+                if (!pageId || ["index", "log", "overview"].includes(stem)) continue
+                try {
+                  const content = await readFile(`${pp}/${wpath}`)
+                  await embedPage(pp, pageId, pageTitleFromContent(content, pageId), content, embCfg)
+                } catch {
+                  // non-critical
+                }
+              }
+            } catch {
+              // embedding module not available
+            }
+          },
+        },
+      )
+    })
   }
 
   // ── Step 0.6: Caption embedded images ─────────────────────────

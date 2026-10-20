@@ -1,3 +1,4 @@
+import { listRawSourceTree } from "@/lib/raw-layout"
 import {
   copyFile,
   createDirectory,
@@ -148,7 +149,7 @@ export async function migrateSourcePath(
 
   const allMd = flattenMd(await listDirectory(`${pp}/wiki`))
   const oldBaseName = getFileName(oldIdentity).toLowerCase()
-  const rawSourceFiles = flattenFiles(await listDirectory(`${pp}/raw/sources`, true))
+  const rawSourceFiles = flattenFiles(await listRawSourceTree(pp))
   const matchingBasenames = rawSourceFiles.filter(
     (file) => getFileName(file.path).toLowerCase() === oldBaseName,
   )

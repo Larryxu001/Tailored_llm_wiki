@@ -1,3 +1,4 @@
+import { listRawSourceTree } from "@/lib/raw-layout"
 import { useState, useEffect, useCallback, useMemo } from "react"
 import {
   FileText, Users, Lightbulb, BookOpen, HelpCircle, GitMerge, BarChart3, TrendingUp, Target, ChevronRight, ChevronDown, Layout, Globe, Trash2,
@@ -11,7 +12,6 @@ import { normalizePath } from "@/lib/path-utils"
 import { refreshProjectFileTree } from "@/lib/project-file-tree-refresh"
 import { cascadeDeleteWikiPagesWithRefs } from "@/lib/wiki-page-delete"
 import { inferWikiTypeFromPath, wikiTypeLabel } from "@/lib/wiki-page-types"
-import { filterRawSourceTree } from "@/lib/source-filter"
 import { useTranslation } from "react-i18next"
 import { useAppDialog } from "@/stores/app-dialog-store"
 import { parseSources } from "@/lib/sources-merge"
@@ -303,7 +303,7 @@ function RawSourcesSection() {
     if (!project) return
     let cancelled = false
     const pp = normalizePath(project.path)
-    listDirectory(`${pp}/raw/sources`, true).then(filterRawSourceTree)
+    listRawSourceTree(pp)
       .then((tree) => {
         if (!cancelled) setSources(flattenFilesNaturally(tree))
       })

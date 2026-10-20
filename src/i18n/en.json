@@ -479,6 +479,7 @@
     "languageHint": "Interface language (wiki content follows source material language)",
     "categories": {
       "general": "General",
+      "agent": "Agent Mode",
       "llm": "LLM Models",
       "embedding": "Embeddings",
       "multimodal": "Image Captioning",

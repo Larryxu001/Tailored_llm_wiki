@@ -257,6 +257,7 @@ pub async fn claude_cli_spawn(
     messages: Vec<ClaudeMessage>,
     isolate_local_config: bool,
     working_directory: Option<String>,
+    agent_mode: Option<bool>,
 ) -> Result<(), String> {
     // Build the turn list: fold any system messages into a preamble on
     // the first user turn rather than using a CLI flag, because
@@ -300,7 +301,16 @@ pub async fn claude_cli_spawn(
     if let Some(path_env) = child_path_env().await {
         cmd.env("PATH", path_env);
     }
-    cmd.args(build_claude_cli_args(&model, isolate_local_config));
+    let mut args = build_claude_cli_args(&model, isolate_local_config);
+    if agent_mode == Some(true) {
+        apply_claude_agent_mode(&mut args);
+        // Agent runs must use the claude.ai subscription login, never an API
+        // key inherited from the environment (which would switch billing).
+        for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
+            cmd.env_remove(key);
+        }
+    }
+    cmd.args(args);
     cmd.current_dir(&working_directory);
 
     cmd.stdin(Stdio::piped())
@@ -469,6 +479,32 @@ fn build_claude_cli_args(model: &str, isolate_local_config: bool) -> Vec<String>
     args
 }
 
+/// Tailored: agent mode lets Claude Code edit files in the project working
+/// directory during a single run. File tools only; edits inside the working
+/// directory are auto-accepted so the headless run never waits on a prompt.
+const CLAUDE_AGENT_TOOLS: &str = "Read,Write,Edit,MultiEdit,Glob,Grep,LS";
+
+fn apply_claude_agent_mode(args: &mut Vec<String>) {
+    if let Some(pos) = args.iter().position(|arg| arg == "--tools") {
+        if pos + 1 < args.len() {
+            args.drain(pos..pos + 2);
+        }
+    }
+    let insert_at = args
+        .iter()
+        .position(|arg| arg == "--strict-mcp-config")
+        .unwrap_or(args.len());
+    args.splice(
+        insert_at..insert_at,
+        [
+            "--permission-mode".to_string(),
+            "acceptEdits".to_string(),
+            "--allowedTools".to_string(),
+            CLAUDE_AGENT_TOOLS.to_string(),
+        ],
+    );
+}
+
 async fn resolve_claude_working_directory(value: Option<String>) -> Result<PathBuf, String> {
     let raw = value
         .as_deref()
@@ -527,6 +563,21 @@ pub async fn claude_cli_kill(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn claude_agent_mode_enables_file_tools_and_accepts_edits() {
+        let mut args = build_claude_cli_args("sonnet", true);
+        apply_claude_agent_mode(&mut args);
+        assert!(!args.windows(2).any(|pair| pair[0] == "--tools" && pair[1].is_empty()));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--permission-mode" && pair[1] == "acceptEdits"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--allowedTools" && pair[1] == CLAUDE_AGENT_TOOLS));
+        // inline MCP JSON must stay last (see build_claude_cli_args)
+        assert_eq!(args.last().map(String::as_str), Some(ISOLATED_MCP_CONFIG));
+    }
+
     use super::*;
 
     #[test]

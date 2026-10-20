@@ -2,6 +2,7 @@ import { getFileName, normalizePath } from "@/lib/path-utils"
 
 const RAW_SOURCES_PREFIX = "raw/sources/"
 const RAW_SOURCES_MARKER = "/raw/sources/"
+const RAW_PREFIX = "raw/"
 const MAX_SOURCE_SUMMARY_SLUG_LENGTH = 120
 const FALLBACK_SOURCE_PART = "source"
 
@@ -20,6 +21,15 @@ export function sourceIdentityForPath(projectPath: string, sourcePath: string): 
   if (markerIndex >= 0) {
     return sp.slice(markerIndex + RAW_SOURCES_MARKER.length)
   }
+  // Tailored: relaxed raw/ layout — any file under raw/ (outside
+  // raw/sources/) is identified by its path relative to raw/.
+  const projectRawPrefix = `${pp}/${RAW_PREFIX}`
+  if (spKey.startsWith(projectRawPrefix.toLowerCase())) {
+    return sp.slice(projectRawPrefix.length)
+  }
+  if (spKey.startsWith(RAW_PREFIX)) {
+    return sp.slice(RAW_PREFIX.length)
+  }
   return getFileName(sp)
 }
 
@@ -32,6 +42,10 @@ export function sourceReferenceIdentity(sourceReference: string): string {
   const markerIndex = refKey.indexOf(RAW_SOURCES_MARKER)
   if (markerIndex >= 0) {
     return ref.slice(markerIndex + RAW_SOURCES_MARKER.length)
+  }
+  // Tailored: relaxed raw/ layout
+  if (refKey.startsWith(RAW_PREFIX)) {
+    return ref.slice(RAW_PREFIX.length)
   }
   return ref
 }

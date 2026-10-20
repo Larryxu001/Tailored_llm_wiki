@@ -1,3 +1,4 @@
+import { isRawSourceRelPath } from "@/lib/raw-layout"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { readFile } from "@/commands/fs"
 import {
@@ -382,7 +383,7 @@ async function enqueueRawSourceChanges(
 
 function isIngestableRawSource(relativePath: string): boolean {
   const path = normalizePath(relativePath)
-  if (!path.startsWith("raw/sources/")) return false
+  if (!isRawSourceRelPath(path)) return false
   return isIngestableSourcePath(path)
 }
 
@@ -425,7 +426,7 @@ async function cleanupDeletedFiles(project: WikiProject, tasks: FileChangeTask[]
 
 function isRawSourcePathForCascade(relativePath: string): boolean {
   const path = normalizePath(relativePath)
-  if (!path.startsWith("raw/sources/")) return false
+  if (!isRawSourceRelPath(path)) return false
   if (path.includes("/.cache/")) return false
   const fileName = path.split("/").pop() ?? ""
   return Boolean(fileName && !fileName.startsWith("."))

@@ -1,3 +1,4 @@
+import { loadAgentConfig } from "@/lib/agent-config"
 import { useState, useEffect } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { invoke } from "@tauri-apps/api/core"
@@ -360,6 +361,8 @@ function App() {
         if (savedMultimodalConfig) {
           useWikiStore.getState().setMultimodalConfig(savedMultimodalConfig)
         }
+        // Tailored: agent ingest / agent lint settings
+        await loadAgentConfig()
 
         const savedMineruConfig = await loadMineruConfig()
         if (savedMineruConfig) {
