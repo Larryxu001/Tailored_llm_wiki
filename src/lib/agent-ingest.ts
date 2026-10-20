@@ -136,6 +136,68 @@ export function translationPathForIdentity(sourceIdentity: string): string {
   return `raw/translations/${withoutExt}.md`
 }
 
+/** Abort an agent run that produces no output at all within this window. */
+export const AGENT_FIRST_OUTPUT_TIMEOUT_MS = 5 * 60 * 1000
+
+export const AGENT_STARTUP_STALL_MESSAGE =
+  "Agent 启动 5 分钟内没有任何输出，已停止。最常见的原因是 macOS 正在等待你授权本应用访问“iCloud 云盘/文稿”等文件夹（Codex 的技能目录可能指向 iCloud）：请到 系统设置 → 隐私与安全性 → 文件与文件夹 中为 LLM Wiki Tailored 打开权限，然后在活动面板重试。"
+
+/**
+ * Run one agent turn with a startup watchdog: a CLI that never emits anything
+ * (typically blocked on a macOS privacy prompt) is stopped after 5 minutes
+ * instead of hanging until the full subprocess timeout.
+ */
+export async function runAgentTurn(
+  llmConfig: LlmConfig,
+  prompt: string,
+  signal: AbortSignal | undefined,
+  overrides: Parameters<typeof streamChat>[4],
+  firstOutputTimeoutMs = AGENT_FIRST_OUTPUT_TIMEOUT_MS,
+): Promise<string> {
+  const controller = new AbortController()
+  const forwardAbort = () => controller.abort()
+  if (signal?.aborted) controller.abort()
+  signal?.addEventListener("abort", forwardAbort)
+  let text = ""
+  let sawOutput = false
+  let stalled = false
+  let failure: Error | null = null
+  const watchdog = setTimeout(() => {
+    if (!sawOutput) {
+      stalled = true
+      controller.abort()
+    }
+  }, firstOutputTimeoutMs)
+  try {
+    await streamChat(
+      llmConfig,
+      [{ role: "user", content: prompt }],
+      {
+        onToken: (token) => {
+          sawOutput = true
+          text += token
+        },
+        onDone: () => {},
+        onError: (err) => { failure = err },
+      },
+      controller.signal,
+      {
+        ...overrides,
+        // Any CLI event (thread start, tool call, reasoning) proves the
+        // agent is alive; only total silence trips the watchdog.
+        agentOnActivity: () => { sawOutput = true },
+      },
+    )
+  } finally {
+    clearTimeout(watchdog)
+    signal?.removeEventListener("abort", forwardAbort)
+  }
+  if (stalled) throw new Error(AGENT_STARTUP_STALL_MESSAGE)
+  if (signal?.aborted) throw new Error("cancelled")
+  if (failure) throw failure
+  return text
+}
+
 /** Shown after 90s: the most common silent stall is a pending macOS privacy prompt. */
 export const AGENT_STALL_HINT =
   " 若长时间没有进展，请检查 macOS 是否弹出了“访问文件夹/iCloud 云盘”的授权窗口并点“允许”。"
@@ -277,30 +339,23 @@ export async function runAgentIngest(
   }, 2000)
 
   let finalText = ""
-  let agentError: Error | null = null
   try {
-    await streamChat(
+    finalText = await runAgentTurn(
       agentLlmConfig(ctx.llmConfig, agentConfig),
-      [{ role: "user", content: prompt }],
-      {
-        onToken: (token) => { finalText += token },
-        onDone: () => {},
-        onError: (err) => { agentError = err },
-      },
+      prompt,
       ctx.signal,
       agentRequestOverrides(agentConfig),
     )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const cancelled = ctx.signal?.aborted
+    activity.updateItem(ctx.activityId, {
+      status: "error",
+      detail: cancelled ? "Ingest cancelled" : `Agent ingest failed: ${message}`,
+    })
+    throw cancelled ? new Error("Ingest cancelled") : err
   } finally {
     clearInterval(ticker)
-  }
-  if (ctx.signal?.aborted) {
-    activity.updateItem(ctx.activityId, { status: "error", detail: "Ingest cancelled" })
-    throw new Error("Ingest cancelled")
-  }
-  if (agentError) {
-    const message = (agentError as Error).message
-    activity.updateItem(ctx.activityId, { status: "error", detail: `Agent ingest failed: ${message}` })
-    throw agentError
   }
 
   const after = await snapshotWiki(pp)

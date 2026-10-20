@@ -147,6 +147,7 @@ export async function streamCodexCli(
 
   try {
     unlistenData = await listen<string>(`codex-cli:${streamId}`, (event) => {
+      overrides?.agentOnActivity?.()
       const token = parseCodexCliLine(event.payload)
       if (token !== null) {
         emittedAgentMessage = true

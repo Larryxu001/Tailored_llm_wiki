@@ -13,7 +13,6 @@
  *     their direct neighbours (the agent follows links itself).
  *   - "full":    the whole wiki, processed folder by folder.
  */
-import { streamChat } from "@/lib/llm-client"
 import type { LlmConfig } from "@/stores/wiki-store"
 import { useWikiStore } from "@/stores/wiki-store"
 import { useActivityStore } from "@/stores/activity-store"
@@ -26,7 +25,7 @@ import { withProjectLock } from "@/lib/project-mutex"
 import { getLanguagePromptName } from "@/lib/language-metadata"
 import { getOutputLanguage } from "@/lib/output-language"
 import { agentLlmConfig, agentRequestOverrides, supportsAgentMode, useAgentConfigStore } from "@/lib/agent-config"
-import { AGENT_STALL_HINT, diffSnapshots, pruneDeletedPagesFromIndex, snapshotWiki } from "@/lib/agent-ingest"
+import { AGENT_STALL_HINT, diffSnapshots, pruneDeletedPagesFromIndex, runAgentTurn, snapshotWiki } from "@/lib/agent-ingest"
 import {
   completeAgentLint,
   ensureFullLintBaseline,
@@ -162,29 +161,22 @@ async function runAgentLintImpl(
       })
     }, 2000)
     let finalText = ""
-    let agentError: Error | null = null
     try {
-      await streamChat(
+      finalText = await runAgentTurn(
         agentLlmConfig(llmConfig, agentConfig),
-        [{ role: "user", content: prompt }],
-        {
-          onToken: (token) => { finalText += token },
-          onDone: () => {},
-          onError: (err) => { agentError = err },
-        },
+        prompt,
         signal,
         agentRequestOverrides(agentConfig),
       )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      activity.updateItem(activityId, {
+        status: "error",
+        detail: signal?.aborted ? "Agent lint cancelled" : `Agent lint failed: ${message}`,
+      })
+      throw err
     } finally {
       clearInterval(ticker)
-    }
-    if (signal?.aborted) {
-      activity.updateItem(activityId, { status: "error", detail: "Agent lint cancelled" })
-      throw new Error("Agent lint cancelled")
-    }
-    if (agentError) {
-      activity.updateItem(activityId, { status: "error", detail: `Agent lint failed: ${(agentError as Error).message}` })
-      throw agentError
     }
 
     const after = await snapshotWiki(pp)

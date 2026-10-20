@@ -268,6 +268,7 @@ export async function streamClaudeCodeCli(
     // The active-project guard above is intentionally earlier: without
     // a valid project CWD we will not spawn, so no CLI events can race.
     unlistenData = await listen<string>(`claude-cli:${streamId}`, (event) => {
+      overrides?.agentOnActivity?.()
       const eventError = extractClaudeCodeStructuredError(event.payload)
       if (eventError) structuredError = eventError
       const token = parse(event.payload)

@@ -76,6 +76,8 @@ export interface RequestOverrides {
   agentServiceTier?: string
   /** Tailored: strip API-key env vars so agent runs use the CLI subscription login. */
   agentSubscriptionOnly?: boolean
+  /** Tailored: called for every raw CLI event (tool calls included), for liveness. */
+  agentOnActivity?: () => void
 }
 
 interface ProviderConfig {
