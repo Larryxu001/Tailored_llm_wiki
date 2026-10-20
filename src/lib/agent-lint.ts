@@ -26,7 +26,7 @@ import { withProjectLock } from "@/lib/project-mutex"
 import { getLanguagePromptName } from "@/lib/language-metadata"
 import { getOutputLanguage } from "@/lib/output-language"
 import { agentLlmConfig, agentRequestOverrides, supportsAgentMode, useAgentConfigStore } from "@/lib/agent-config"
-import { diffSnapshots, pruneDeletedPagesFromIndex, snapshotWiki } from "@/lib/agent-ingest"
+import { AGENT_STALL_HINT, diffSnapshots, pruneDeletedPagesFromIndex, snapshotWiki } from "@/lib/agent-ingest"
 import {
   completeAgentLint,
   ensureFullLintBaseline,
@@ -158,7 +158,7 @@ async function runAgentLintImpl(
     const startedAt = Date.now()
     const ticker = setInterval(() => {
       activity.updateItem(activityId, {
-        detail: `Agent lint running (${Math.round((Date.now() - startedAt) / 1000)}s)...`,
+        detail: `Agent lint running (${Math.round((Date.now() - startedAt) / 1000)}s)...${Date.now() - startedAt >= 90_000 ? AGENT_STALL_HINT : ""}`,
       })
     }, 2000)
     let finalText = ""

@@ -28,6 +28,22 @@ pub struct CodexCliState {
     children: Arc<Mutex<HashMap<String, Child>>>,
 }
 
+impl CodexCliState {
+    /// Tailored: `app.exit()` terminates the process without running
+    /// destructors, so `kill_on_drop` never fires and CLI children (possibly
+    /// long agent runs) keep running as orphans. Kill them explicitly on exit.
+    pub fn kill_all_blocking(&self) {
+        let children = Arc::clone(&self.children);
+        tauri::async_runtime::block_on(async move {
+            let mut map = children.lock().await;
+            for (_, child) in map.iter_mut() {
+                let _ = child.start_kill();
+            }
+            map.clear();
+        });
+    }
+}
+
 #[derive(Serialize)]
 pub struct DetectResult {
     installed: bool,
@@ -347,7 +363,19 @@ fn apply_codex_agent_mode(
         args[pos] = "workspace-write".to_string();
     }
     let stdin_pos = args.iter().rposition(|arg| arg == "-").unwrap_or(args.len());
-    let mut extra = vec!["--disable".to_string(), "memories".to_string()];
+    // `-c features.<name>=…` is ignored by Codex versions that do not know the
+    // feature, whereas `--enable/--disable <unknown>` aborts the run.
+    // - memories off: results must not depend on personal Codex history.
+    // - skip host skill discovery: ingest needs no coding skills; skipping them
+    //   saves ~20k prompt tokens per run and avoids reading skill folders that
+    //   may live in protected locations (iCloud Drive), which would block on a
+    //   macOS privacy prompt for this app.
+    let mut extra = vec![
+        "-c".to_string(),
+        "features.memories=false".to_string(),
+        "-c".to_string(),
+        "features.skip_host_skill_discovery=true".to_string(),
+    ];
     if let Some(effort) = reasoning_effort
         .map(str::trim)
         .filter(|e| ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"].contains(e))
@@ -465,9 +493,8 @@ mod tests {
         apply_codex_agent_mode(&mut args, Some("medium"), Some("priority"));
         assert!(args.contains(&"workspace-write".to_string()));
         assert!(!args.contains(&"read-only".to_string()));
-        assert!(args
-            .windows(2)
-            .any(|pair| pair[0] == "--disable" && pair[1] == "memories"));
+        assert!(args.contains(&"features.memories=false".to_string()));
+        assert!(args.contains(&"features.skip_host_skill_discovery=true".to_string()));
         assert!(args.contains(&"model_reasoning_effort=\"medium\"".to_string()));
         assert!(args.contains(&"service_tier=\"priority\"".to_string()));
         assert_eq!(args.last().map(String::as_str), Some("-"));

@@ -40,6 +40,22 @@ pub struct ClaudeCliState {
     children: Arc<Mutex<HashMap<String, Child>>>,
 }
 
+impl ClaudeCliState {
+    /// Tailored: `app.exit()` terminates the process without running
+    /// destructors, so `kill_on_drop` never fires and CLI children (possibly
+    /// long agent runs) keep running as orphans. Kill them explicitly on exit.
+    pub fn kill_all_blocking(&self) {
+        let children = Arc::clone(&self.children);
+        tauri::async_runtime::block_on(async move {
+            let mut map = children.lock().await;
+            for (_, child) in map.iter_mut() {
+                let _ = child.start_kill();
+            }
+            map.clear();
+        });
+    }
+}
+
 #[derive(Serialize)]
 pub struct DetectResult {
     installed: bool,

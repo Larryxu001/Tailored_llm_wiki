@@ -136,6 +136,10 @@ export function translationPathForIdentity(sourceIdentity: string): string {
   return `raw/translations/${withoutExt}.md`
 }
 
+/** Shown after 90s: the most common silent stall is a pending macOS privacy prompt. */
+export const AGENT_STALL_HINT =
+  " 若长时间没有进展，请检查 macOS 是否弹出了“访问文件夹/iCloud 云盘”的授权窗口并点“允许”。"
+
 /** Marker the agent prints last, so an empty review list is still a non-empty reply. */
 export const AGENT_INGEST_DONE_MARKER = "INGEST-COMPLETE"
 
@@ -268,7 +272,7 @@ export async function runAgentIngest(
   const ticker = setInterval(() => {
     const secs = Math.round((Date.now() - startedAt) / 1000)
     activity.updateItem(ctx.activityId, {
-      detail: `Agent ingest running (${ctx.llmConfig.provider}, ${secs}s)${translate ? " — incl. translation" : ""}...`,
+      detail: `Agent ingest running (${ctx.llmConfig.provider}, ${secs}s)${translate ? " — incl. translation" : ""}...${secs >= 90 ? AGENT_STALL_HINT : ""}`,
     })
   }, 2000)
 

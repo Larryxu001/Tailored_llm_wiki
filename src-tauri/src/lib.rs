@@ -751,6 +751,16 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            // Tailored: do not leave Claude/Codex CLI children running after quit.
+            if matches!(event, tauri::RunEvent::Exit) {
+                use tauri::Manager;
+                if let Some(state) = app.try_state::<commands::codex_cli::CodexCliState>() {
+                    state.kill_all_blocking();
+                }
+                if let Some(state) = app.try_state::<commands::claude_cli::ClaudeCliState>() {
+                    state.kill_all_blocking();
+                }
+            }
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen {
                 has_visible_windows,
