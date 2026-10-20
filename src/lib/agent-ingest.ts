@@ -137,9 +137,23 @@ export function localDate(now: Date = new Date()): string {
 }
 
 /** Where the agent writes the full translation of a source. */
-export function translationPathForIdentity(sourceIdentity: string): string {
+const TRANSLATION_SUFFIX: Record<string, string> = {
+  Chinese: "zh",
+  "Traditional Chinese": "zh-Hant",
+  English: "en",
+  Japanese: "ja",
+  Korean: "ko",
+}
+
+/**
+ * Where the agent writes the full translation of a source. The language
+ * suffix keeps the file name distinct from the original, so Obsidian's
+ * quick switcher, search and [[links]] never confuse the two.
+ */
+export function translationPathForIdentity(sourceIdentity: string, targetLanguage = "Chinese"): string {
   const withoutExt = sourceIdentity.replace(/\.[^/.]+$/, "")
-  return `raw/translations/${withoutExt}.md`
+  const suffix = TRANSLATION_SUFFIX[targetLanguage] ?? targetLanguage.toLowerCase().replace(/[^a-z]+/g, "-")
+  return `raw/translations/${withoutExt}.${suffix}.md`
 }
 
 /** Abort an agent run that produces no output at all within this window. */
@@ -333,7 +347,7 @@ export function buildAgentIngestPrompt(input: AgentIngestPromptInput): string {
   lines.push(
     `${step}. Search existing wiki pages (by name, aliases, tickers) before creating anything. Update an existing page instead of creating a duplicate. When updating, read the page first and rewrite it so it states the current understanding: keep other sources' contributions, move superseded statements into a change-log section with date, reason and source.`,
     `${step + 1}. Write the source summary to ${input.sourceSummaryPath} (type: source). Then create or update the knowledge pages schema.md calls for. Create a standalone page only when it meets schema.md's threshold.`,
-    `${step + 2}. Every page you write has valid YAML frontmatter with at least: type, title, created, updated, tags, related, sources. \`sources\` lists source identities (here: ${input.sourceIdentity}). \`related\` lists page file names without .md. Use [[page-name]] wikilinks in the body. Dates are ${input.today}.`,
+    `${step + 2}. Every page you write has valid YAML frontmatter with at least: type, title, created, updated, tags, related, sources. \`sources\` lists source identities (here: ${input.sourceIdentity}). \`related\` lists related pages as quoted wikilinks, e.g. related: ["[[sk-hynix]]", "[[hbm]]"] (clickable in Obsidian; LLM Wiki reads them too). Use [[page-name]] or [[page-name|显示名]] wikilinks in the body. Dates are ${input.today}.`,
     `${step + 3}. Append one entry for today to wiki/log.md saying what this source changed (pages created / updated, views supported or challenged).`,
     "",
     "## Never",
@@ -375,7 +389,7 @@ export async function runAgentIngest(
   const outputLanguage = getLanguagePromptName(outputLanguageCode)
   const translate = agentConfig.translateSources && needsTranslation(ctx.sourceContent, outputLanguageCode)
   const inputRelPath = agentInputPathForIdentity(ctx.sourceIdentity)
-  const translationRelPath = translate ? translationPathForIdentity(ctx.sourceIdentity) : undefined
+  const translationRelPath = translate ? translationPathForIdentity(ctx.sourceIdentity, outputLanguageCode) : undefined
 
   await createDirectory(`${pp}/.llm-wiki/agent-input`)
   await writeFile(`${pp}/${inputRelPath}`, ctx.sourceContent)

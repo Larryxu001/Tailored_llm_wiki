@@ -47,7 +47,9 @@ export interface DeletedPageInfo {
  * distinct on purpose.
  */
 export function normalizeWikiRefKey(s: string): string {
-  const normalized = s.trim().replace(/\\/g, "/")
+  // Tailored: accept Obsidian-style `[[page|alias]]` / `[[page#heading]]`
+  // values in `related:` as well as bare slugs.
+  const normalized = s.trim().replace(/^\[\[|\]\]$/g, "").split("|")[0].split("#")[0].replace(/\\/g, "/")
   const leaf = normalized.split("/").pop() ?? normalized
   const withoutMd = leaf.toLowerCase().endsWith(".md") ? leaf.slice(0, -3) : leaf
   return withoutMd.toLowerCase().replace(/[\s\-_]+/g, "")

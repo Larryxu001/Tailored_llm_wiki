@@ -125,7 +125,8 @@ describe("agent ingest helpers", () => {
     useWikiStore.getState().setOutputLanguage("Chinese")
     expect(needsTranslation(english, "Chinese")).toBe(true)
     expect(needsTranslation("中际旭创的光模块业务继续增长。".repeat(20), "Chinese")).toBe(false)
-    expect(translationPathForIdentity("海外投行/2026-10/JPM x.pdf")).toBe("raw/translations/海外投行/2026-10/JPM x.md")
+    expect(translationPathForIdentity("海外投行/2026-10/JPM x.pdf")).toBe("raw/translations/海外投行/2026-10/JPM x.zh.md")
+    expect(translationPathForIdentity("国内券商/x.pdf", "English")).toBe("raw/translations/国内券商/x.en.md")
     // English report with a few CJK characters (fullwidth brackets in a title)
     const mostlyEnglish = "SK Hynix（000660）Re-rating likely ahead. " + english
     expect(dominantScript(mostlyEnglish)).toBe("latin")
@@ -159,6 +160,7 @@ describe("agent ingest helpers", () => {
     expect(prompt).toContain("---REVIEW:")
     expect(prompt).toContain("purpose.md and schema.md")
     expect(prompt).toContain("INGEST-COMPLETE")
+    expect(prompt).toContain('related: ["[[sk-hynix]]"')
     expect(prompt).toContain("disclosures begin on page 14")
   })
 })
@@ -202,5 +204,14 @@ describe("agent lint helpers", () => {
     expect(isLintablePage("wiki/entities/a.md")).toBe(true)
     expect(isLintablePage("wiki/index.md")).toBe(false)
     expect(isLintablePage("raw/x.md")).toBe(false)
+  })
+})
+
+describe("Obsidian-style related values", () => {
+  it("normalizes [[wikilink]] related entries like bare slugs", async () => {
+    const { normalizeWikiRefKey } = await import("./wiki-cleanup")
+    expect(normalizeWikiRefKey("[[sk-hynix]]")).toBe(normalizeWikiRefKey("sk-hynix"))
+    expect(normalizeWikiRefKey("[[entities/sk-hynix|SK 海力士]]")).toBe(normalizeWikiRefKey("sk-hynix"))
+    expect(normalizeWikiRefKey("[[hbm#history]]")).toBe(normalizeWikiRefKey("hbm"))
   })
 })
