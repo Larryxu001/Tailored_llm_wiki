@@ -25,7 +25,7 @@ import { withProjectLock } from "@/lib/project-mutex"
 import { getLanguagePromptName } from "@/lib/language-metadata"
 import { getOutputLanguage } from "@/lib/output-language"
 import { agentLlmConfig, agentRequestOverrides, supportsAgentMode, useAgentConfigStore } from "@/lib/agent-config"
-import { AGENT_STALL_HINT, diffSnapshots, pruneDeletedPagesFromIndex, runAgentTurn, snapshotWiki } from "@/lib/agent-ingest"
+import { AGENT_STALL_HINT, diffSnapshots, localDate, pruneDeletedPagesFromIndex, runAgentTurn, snapshotWiki } from "@/lib/agent-ingest"
 import {
   completeAgentLint,
   ensureFullLintBaseline,
@@ -151,7 +151,7 @@ async function runAgentLintImpl(
       try { sample += (await readFile(`${pp}/${rel}`)).slice(-8000) } catch { /* optional */ }
     }
     const outputLanguage = getLanguagePromptName(getOutputLanguage(sample))
-    const prompt = buildAgentLintPrompt(scope, outputLanguage, new Date().toISOString().slice(0, 10))
+    const prompt = buildAgentLintPrompt(scope, outputLanguage, localDate())
 
     const before = await snapshotWiki(pp)
     const startedAt = Date.now()

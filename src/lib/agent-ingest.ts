@@ -130,6 +130,11 @@ export async function pruneDeletedPagesFromIndex(projectPath: string, deleted: s
   return true
 }
 
+/** Local calendar date (YYYY-MM-DD); toISOString() would give the UTC date. */
+export function localDate(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+}
+
 /** Where the agent writes the full translation of a source. */
 export function translationPathForIdentity(sourceIdentity: string): string {
   const withoutExt = sourceIdentity.replace(/\.[^/.]+$/, "")
@@ -210,15 +215,39 @@ export function agentInputPathForIdentity(sourceIdentity: string): string {
   return `.llm-wiki/agent-input/${safe}.md`
 }
 
+/**
+ * Dominant writing system of a text by character share. The stock
+ * detectLanguage() ignores ASCII, so an English report with a few CJK
+ * characters (a fullwidth bracket in the title) is reported as Chinese.
+ */
+export function dominantScript(text: string): "latin" | "cjk" | "other" {
+  const sample = text.slice(0, 40_000)
+  const latin = (sample.match(/[A-Za-z]/g) ?? []).length
+  const cjk = (sample.match(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/g) ?? []).length
+  if (latin === 0 && cjk === 0) return "other"
+  // One CJK character carries roughly a word; weigh it against ~3 letters.
+  return cjk * 3 >= latin ? "cjk" : "latin"
+}
+
+const CJK_TARGETS = new Set(["Chinese", "Traditional Chinese", "Japanese", "Korean"])
+
 export function needsTranslation(sourceContent: string, targetLanguage: string): boolean {
   const configured = useWikiStore.getState().outputLanguage
   if (!configured || configured === "auto") return false
-  const sourceLanguage = detectLanguage(sourceContent.slice(0, 20_000) || "English")
-  if (sourceLanguage === targetLanguage) return false
-  // Simplified ↔ Traditional Chinese is a writing-system conversion the
-  // model handles while writing pages; it is not worth a full translation.
-  const chinese = new Set(["Chinese", "Traditional Chinese"])
-  return !(chinese.has(sourceLanguage) && chinese.has(targetLanguage))
+  const script = dominantScript(sourceContent)
+  // Latin-script sources are treated as English (the script-based detector
+  // cannot tell Latin-script languages apart).
+  if (script === "latin") return targetLanguage !== "English"
+  if (script === "cjk") {
+    if (!CJK_TARGETS.has(targetLanguage)) return true
+    // CJK source into a CJK target: translate only across languages
+    // (e.g. Japanese → Chinese), not Simplified ↔ Traditional Chinese.
+    const source = detectLanguage(sourceContent.slice(0, 20_000))
+    const chinese = new Set(["Chinese", "Traditional Chinese"])
+    if (chinese.has(source) && chinese.has(targetLanguage)) return false
+    return source !== targetLanguage
+  }
+  return detectLanguage(sourceContent.slice(0, 20_000)) !== targetLanguage
 }
 
 export interface AgentIngestPromptInput {
@@ -254,7 +283,8 @@ export function buildAgentIngestPrompt(input: AgentIngestPromptInput): string {
     "",
     "## Steps",
     "1. Read purpose.md and schema.md in the project root, and any rule file they reference. They define what is worth a page, page types, directories and frontmatter. Follow them over anything below when they conflict.",
-    "2. Read the extracted text. First locate where disclaimers / disclosures / analyst certifications / legal notices begin (usually near the end). Ingest ONLY the content before that point; skip everything after it entirely, do not summarize it.",
+    "2. Read the extracted text. First locate where the disclosure section begins: the long legal block, usually at the END of the document, typically headed Required Disclosures / Important Disclosures / Analyst Certification / Disclaimer / 免责声明 / 分析师声明 / 重要声明. Ingest ONLY the content before that point; skip everything after it entirely, do not summarize it.",
+    "   A short notice inside the body that merely points to the disclosures (e.g. \"disclosures begin on page 14\", \"see important disclosures at the end of this report\", a one-line conflict-of-interest note on page 1) is NOT the start of the section: keep reading the body after it. Sanity check: research reports put most of their pages into the body, so if your cut would discard most of the document, look again. Record the heading or first words where you cut, and the page range kept, in the source summary.",
   )
   let step = 3
   if (input.translationRelPath) {
@@ -326,7 +356,7 @@ export async function runAgentIngest(
     translationRelPath,
     imageRelPaths: ctx.savedImages.map((img) => `wiki/${img.relPath}`),
     folderContext: ctx.folderContext,
-    today: new Date().toISOString().slice(0, 10),
+    today: localDate(),
   })
 
   const before = await snapshotWiki(pp)

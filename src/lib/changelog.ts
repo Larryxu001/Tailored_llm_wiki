@@ -28,6 +28,30 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.6.12-tailored.1",
+    date: "2026-10-21",
+    highlights: {
+      en: [
+        "Tailored build (based on LLM Wiki 0.6.12): new green icon and a separate app identity, so it runs side by side with the original app and keeps its own settings.",
+        "Agent ingest: each source is ingested in one Codex CLI / Claude Code run that reads it once, skips disclosures and disclaimers, translates it when the output language differs, and rewrites existing pages in place. Uses your CLI subscription login; the original multi-step pipeline remains as a fallback.",
+        "Relaxed raw/ layout: sources can live in any folder under raw/ (e.g. raw/海外投行/2026-10/); raw/sources/ keeps working as before.",
+        "Agent lint: after each ingest batch the changed pages are health-checked automatically (plus a periodic full-wiki pass). Mechanical issues are fixed, judgment calls go to Review.",
+        "Settings → Agent Mode: pick the model from the CLI's own model list, reasoning effort and Fast speed; translation, auto-lint and subscription-only switches.",
+        "The activity panel can be resized by dragging its top edge.",
+        "Fixed: Claude/Codex CLI processes kept running after quitting the app. Agent runs that stay silent for 5 minutes (usually a pending macOS privacy prompt) now stop with a clear message.",
+      ],
+      zh: [
+        "定制版（基于 LLM Wiki 0.6.12）：换成绿色图标，使用独立的应用身份，可与原版同时运行，设置互不影响。",
+        "Agent 摄入：每份资料只调用一次 Codex CLI / Claude Code，读一遍原文、跳过免责声明和 disclosure；输出语言不同时自动全文翻译，并直接改写已有页面。使用命令行登录的订阅额度；原版多步流程保留作备用。",
+        "原文目录松绑：资料可以放在 raw/ 下任意文件夹（如 raw/海外投行/2026-10/），原来的 raw/sources/ 照常可用。",
+        "Agent 体检：每批摄入完成后，自动检查本批改动的页面，并定期做全库体检；机械问题直接修复，需要判断的问题进入待审阅。",
+        "设置 → Agent 模式：从命令行自带的模型列表中选择模型、推理强度和 Fast 速度；可开关全文翻译、自动体检、只用订阅额度。",
+        "活动面板可以拖动顶部边缘调整高度。",
+        "修复：退出应用后 Claude/Codex 命令行进程仍在后台运行的问题。Agent 运行 5 分钟没有任何输出（通常是 macOS 授权弹窗未处理）时，会自动停止并给出明确提示。",
+      ],
+    },
+  },
+  {
     version: "0.6.12",
     date: "2026-09-27",
     highlights: {

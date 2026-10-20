@@ -16,7 +16,9 @@ describe("release metadata", () => {
     )
     const cargoVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1]
 
-    expect(CHANGELOG[0]?.version).toBe(packageJson.version)
+    // Tailored builds label their entries "<upstream version>-tailored.N" while
+    // the manifests keep the upstream version they are based on.
+    expect(CHANGELOG[0]?.version.replace(/-tailored\.\d+$/, "")).toBe(packageJson.version)
     expect(tauriConfig.version).toBe(packageJson.version)
     expect(cargoVersion).toBe(packageJson.version)
   })

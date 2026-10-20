@@ -11,6 +11,8 @@ import { parseAgentReviewBlocks, buildAgentLintPrompt } from "./agent-lint"
 import {
   buildAgentIngestPrompt,
   diffSnapshots,
+  dominantScript,
+  localDate,
   needsTranslation,
   translationPathForIdentity,
 } from "./agent-ingest"
@@ -123,6 +125,16 @@ describe("agent ingest helpers", () => {
     expect(needsTranslation(english, "Chinese")).toBe(true)
     expect(needsTranslation("中际旭创的光模块业务继续增长。".repeat(20), "Chinese")).toBe(false)
     expect(translationPathForIdentity("海外投行/2026-10/JPM x.pdf")).toBe("raw/translations/海外投行/2026-10/JPM x.md")
+    // English report with a few CJK characters (fullwidth brackets in a title)
+    const mostlyEnglish = "SK Hynix（000660）Re-rating likely ahead. " + english
+    expect(dominantScript(mostlyEnglish)).toBe("latin")
+    expect(needsTranslation(mostlyEnglish, "Chinese")).toBe(true)
+    expect(needsTranslation("日本のメモリ市場は拡大している。".repeat(30), "Chinese")).toBe(true)
+    expect(needsTranslation("中际旭创的光模块业务继续增长。".repeat(20), "Traditional Chinese")).toBe(false)
+    useWikiStore.getState().setOutputLanguage("English")
+    expect(needsTranslation(english, "English")).toBe(false)
+    expect(needsTranslation("中际旭创的光模块业务继续增长。".repeat(20), "English")).toBe(true)
+    expect(localDate(new Date(2026, 9, 21, 0, 30))).toBe("2026-10-21")
   })
 
   it("builds a prompt that enforces disclosures-skip, the summary path and review format", () => {
@@ -142,6 +154,7 @@ describe("agent ingest helpers", () => {
     expect(prompt).toContain("---REVIEW:")
     expect(prompt).toContain("purpose.md and schema.md")
     expect(prompt).toContain("INGEST-COMPLETE")
+    expect(prompt).toContain("disclosures begin on page 14")
   })
 })
 
