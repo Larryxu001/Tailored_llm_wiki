@@ -4,6 +4,9 @@ on:
   push:
     tags:
       - 'v*'
+      # Tailored releases are built by tailored-release.yml (Windows) and
+      # locally (macOS); the upstream matrix needs upstream signing secrets.
+      - '!v*-tailored*'
   workflow_dispatch:
 
 permissions:
